@@ -291,30 +291,38 @@ function setEDConstraints(
             # update bids for baseline energy storage using OCB
             for i in axes(RTDBids, 1)
                 if params.EStrategic[i] == 0
-                    db[i, :] =
-                        (vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+ ESMC) /
-                        EDSteps
-                    cb[i, :] =
-                        -vrt[i, :, (h-1)*EDSteps+t] .* params.Eeta[i] / EDSteps
-                    if tp == 1
-                        cbdf = DataFrame(12 * cb[i, :]', :auto)
-                        dbdf = DataFrame(12 * db[i, :]', :auto)
-                        CSV.write(
-                            joinpath(
-                                output_folder * "/NStrategic",
-                                "EDESCB" * "$i" * ".csv",
-                            ),
-                            cbdf,
-                            append = true,
-                        )
-                        CSV.write(
-                            joinpath(
-                                output_folder * "/NStrategic",
-                                "EDESDB" * "$i" * ".csv",
-                            ),
-                            dbdf,
-                            append = true,
-                        )
+                    if params.Eeta[i] == 0.9
+                        db[i, :] =
+                            (
+                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
+                                ESMC
+                            ) / EDSteps
+                        cb[i, :] =
+                            -vrt[i, :, (h-1)*EDSteps+t] .* params.Eeta[i] /
+                            EDSteps
+                        if tp == 1
+                            cbdf = DataFrame(12 * cb[i, :]', :auto)
+                            dbdf = DataFrame(12 * db[i, :]', :auto)
+                            CSV.write(
+                                joinpath(
+                                    output_folder * "/NStrategic",
+                                    "EDESCB" * "$i" * ".csv",
+                                ),
+                                cbdf,
+                                append = true,
+                            )
+                            CSV.write(
+                                joinpath(
+                                    output_folder * "/NStrategic",
+                                    "EDESDB" * "$i" * ".csv",
+                                ),
+                                dbdf,
+                                append = true,
+                            )
+                        end
+                    else
+                        db[i, :] .= EDDBidInput[i, tp] / EDSteps
+                        cb[i, :] .= -EDCBidInput[i, tp] / EDSteps
                     end
                 end
             end
@@ -483,7 +491,7 @@ function writeEDtoCSVandUpdateSOC(
         EDVOLL[ts] +
         EDEScost[ts] +
         sum(
-            EDU[:, (h-1)*EDSteps+t] .* params.GNLC * FuelAdjustment / EDSteps +
+            EDU[:, (h-1)*EDSteps+t] .* params.GNLC / EDSteps +
             EDV[:, (h-1)*EDSteps+t] .* params.GSUC,
         )
     EDGPIni = value.(edmodel[:guc])[:, 1]
@@ -746,15 +754,26 @@ function solving(
                     mean(reshape(EDprice288[!, col], 12, :), dims = 1)
             end
             for i in axes(DADBids, 1)
-                vda[i, :] = generate_value_function(
-                    24,
-                    params.EPD[i] / params.ESOC[i],
-                    params.Eeta[i],
-                    1,
-                    EDprice24 * params.storagemap[i, :],
-                )
-                DAdb[i, :] = vda[i, :] / params.Eeta[i] .+ ESMC
-                DAcb[i, :] = -vda[i, :] .* params.Eeta[i]
+                if params.Eeta[i] == 0.9
+                    vda[i, :] = generate_value_function(
+                        24,
+                        params.EPD[i] / params.ESOC[i],
+                        params.Eeta[i],
+                        1,
+                        EDprice24 * params.storagemap[i, :],
+                    )
+                    DAdb[i, :] = vda[i, :] / params.Eeta[i] .+ ESMC
+                    DAcb[i, :] = -vda[i, :] .* params.Eeta[i]
+                else
+                    DAdb[i, :] = convert(
+                        Vector{Float64},
+                        DADBids[1, 24*(d-1)+1:24*d+UCHorizon-24],
+                    )
+                    DAcb[i, :] = convert(
+                        Vector{Float64},
+                        DACBids[1, 24*(d-1)+1:24*d+UCHorizon-24],
+                    )
+                end
             end
         end
 
@@ -809,8 +828,7 @@ function solving(
                 VOLLcost[d] +
                 EScost[d] +
                 sum(
-                    value.(ucmodel[:u])[:, 1:24] .* params.GNLC *
-                    FuelAdjustment +
+                    value.(ucmodel[:u])[:, 1:24] .* params.GNLC +
                     value.(ucmodel[:v])[:, 1:24] .* params.GSUC,
                 )
             # UCcost[d] = objective_value(ucmodel)
@@ -871,13 +889,15 @@ function solving(
 
             # generate non-strategic RT bids
             for i in axes(RTDBids, 1)
-                vrt[i, :, :] = generate_value_function(
-                    288,
-                    params.EPD[i] / params.ESOC[i] / EDSteps,
-                    params.Eeta[i],
-                    ESSeg,
-                    UCprice288 * params.storagemap[i, :],
-                )
+                if params.Eeta[i] == 0.9
+                    vrt[i, :, :] = generate_value_function(
+                        288,
+                        params.EPD[i] / params.ESOC[i] / EDSteps,
+                        params.Eeta[i],
+                        ESSeg,
+                        UCprice288 * params.storagemap[i, :],
+                    )
+                end
             end
 
             # Solving economic dispatch model

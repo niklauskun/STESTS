@@ -87,7 +87,8 @@ function economicdispatch(
         sum(FuelAdjustment * params.GMC .* guc) / Steps +
         sum(FuelAdjustment * GSMC .* gucs) / Steps +
         sum(200 .* d - 0 .* c) / Steps +
-        sum(PriceCap .* s) / Steps
+        sum(PriceCap .* s) / Steps -
+        sun(50 .* gh + 50 .* gs + 50 .* gw) / Steps
     )
 
     # Bus wise load balance constraints with transmission

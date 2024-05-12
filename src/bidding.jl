@@ -193,94 +193,216 @@ function update_battery_storage!(
     params::STESTS.ModelParams,
     ratio::Float64,
     output_folder::String,
+    heto::Bool,
+    ESAdjustment::Float64,
 )
-    # Assume additional fields in Params for simplicity of explanation
-    new_storagemap = copy(params.storagemap)
-    new_Eeta = []
-    new_EPC = []
-    new_EPD = []
-    new_ESOC = []
-    new_ESOCini = []
-    new_EStrategic = []
+    # Update the battery storage capacity
+    for i in eachindex(params.Eeta)
+        if params.Eeta[i] == 0.9
+            params.EPC[i] *= ESAdjustment
+            params.EPD[i] *= ESAdjustment
+            params.ESOC[i] *= ESAdjustment
+            params.ESOCini[i] *= ESAdjustment
+        end
+    end
+    if heto
+        # Retrieve the new entries and their corresponding regions from params
+        # Initialize temporary storage for new discrete entries
+        new_storagemap = copy(params.storagemap)
+        new_Eeta = Float64[]
+        new_EPC = Float64[]
+        new_EPD = Float64[]
+        new_ESOC = Float64[]
+        new_ESOCini = Float64[]
+        new_EStrategic = Int64[]
+        remove_indices = Int[]
 
-    # Track indices to remove
-    remove_indices = []
+        # Process each entry for discretization if Eeta == 0.9
+        for i in eachindex(params.Eeta)
+            if params.Eeta[i] == 0.9
+                epd = params.EPD[i]
+                eeta = params.Eeta[i]
+                append!(remove_indices, i)  # Mark this index for removal
 
-    for region in 1:size(params.storagemap, 2)
-        # Find battery storage indices in this region
-        battery_indices = findall(
-            i -> params.Eeta[i] == 0.9 && params.storagemap[i, region] == 1,
-            1:length(params.Eeta),
-        )
+                # Decompose EPD
+                components = [1000, 100, 10, 1]
+                for comp in components
+                    count = floor(epd / comp)
+                    epd -= count * comp
+                    for _ in 1:count
+                        append!(new_Eeta, eeta)
+                        append!(new_EPC, comp)
+                        append!(new_EPD, comp)
+                        append!(new_ESOC, 4 * comp)
+                        append!(new_ESOCini, 2 * comp)
+                        append!(new_EStrategic, 0)  # Assuming true strategic value as integer
 
-        if isempty(battery_indices)
-            continue
+                        # Create and append new row for storagemap corresponding to the region
+                        new_storagemap =
+                            vcat(new_storagemap, params.storagemap[i, :]')  # Append column-wise
+                    end
+                end
+
+                # Handle residual
+                if epd > 0
+                    append!(new_Eeta, eeta)
+                    append!(new_EPC, epd)
+                    append!(new_EPD, epd)
+                    append!(new_ESOC, 4 * epd)
+                    append!(new_ESOCini, 2 * epd)
+                    append!(new_EStrategic, 0)  # Assuming true strategic value as integer
+
+                    # Create and append new row for storagemap corresponding to the region
+                    new_storagemap =
+                        vcat(new_storagemap, params.storagemap[i, :]')  # Append column-wise
+                end
+            end
         end
 
-        # Aggregate values
-        total_EPC = sum(params.EPC[battery_indices])
-        total_EPD = sum(params.EPD[battery_indices])
-        total_ESOC = sum(params.ESOC[battery_indices])
-        total_ESOCini = sum(params.ESOCini[battery_indices])
+        # Update params with the new discrete storages
+        params.Eeta = vcat(params.Eeta, new_Eeta)
+        params.EPC = vcat(params.EPC, new_EPC)
+        params.EPD = vcat(params.EPD, new_EPD)
+        params.ESOC = vcat(params.ESOC, new_ESOC)
+        params.ESOCini = vcat(params.ESOCini, new_ESOCini)
+        params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+        params.storagemap = new_storagemap
 
-        # Prepare data for two new storages
-        append!(new_Eeta, [0.9, 0.9])
-        append!(new_EPC, [total_EPC * ratio, total_EPC * (1 - ratio)])
-        append!(new_EPD, [total_EPD * ratio, total_EPD * (1 - ratio)])
-        append!(new_ESOC, [total_ESOC * ratio, total_ESOC * (1 - ratio)])
-        append!(
-            new_ESOCini,
-            [total_ESOCini * ratio, total_ESOCini * (1 - ratio)],
+        # # Remove aggregated entries
+        remove_indices = sort(unique(remove_indices))
+        mask = trues(length(params.Eeta))
+        mask[remove_indices] .= false
+        params.Eeta = params.Eeta[mask]
+        params.EPC = params.EPC[mask]
+        params.EPD = params.EPD[mask]
+        params.ESOC = params.ESOC[mask]
+        params.ESOCini = params.ESOCini[mask]
+        params.EStrategic = params.EStrategic[mask]
+        params.storagemap = params.storagemap[mask, :]
+
+        # save the new configurations to CSV
+        df = DataFrame(
+            Eeta = new_Eeta,
+            EPC = new_EPC,
+            EPD = new_EPD,
+            ESOC = new_ESOC,
+            ESOCini = new_ESOCini,
+            EStrategic = new_EStrategic,
         )
-        append!(new_EStrategic, [1, 0])
-
-        # Update storagemap for new entries
-        # Assuming new_row_strategic is a 1xN vector
-        new_row_strategic = zeros(Int64, size(new_storagemap, 2))
-        new_row_strategic[region] = 1
-
-        # To add two identical rows to the matrix, ensure they are treated as separate rows
-        new_storagemap = vcat(
-            new_storagemap,
-            reshape(new_row_strategic, 1, :),
-            reshape(new_row_strategic, 1, :),
-        )
-
-        append!(remove_indices, battery_indices)
+        CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
     end
+    if ratio == 1.0
+        println("All AI-Powered BES.")
+        for i in eachindex(params.Eeta)
+            if params.Eeta[i] == 0.8
+                params.EStrategic[i] = 0
+            elseif params.Eeta[i] == 0.9
+                params.EStrategic[i] = 1
+            else
+                # Handle unexpected case, if necessary
+                println(
+                    "Unexpected value in params.Eeta at index $i: ",
+                    params.Eeta[i],
+                )
+            end
+        end
+    elseif ratio == 0.0
+        println("No AI-Powered BES.")
+    else
+        if heto
+            error("No heterogenous ES if ISR is not 0.0 or 1.0")
+        end
+        println("ISR AI-Powered BES.")
+        # Assume additional fields in Params for simplicity of explanation
+        new_storagemap = copy(params.storagemap)
+        new_Eeta = []
+        new_EPC = []
+        new_EPD = []
+        new_ESOC = []
+        new_ESOCini = []
+        new_EStrategic = []
 
-    # Save the new entries to csv
-    df = DataFrame(
-        Eeta = new_Eeta,
-        EPC = new_EPC,
-        EPD = new_EPD,
-        ESOC = new_ESOC,
-        ESOCini = new_ESOCini,
-        EStrategic = new_EStrategic,  # Assuming you also have this array
-    )
+        # Track indices to remove
+        remove_indices = []
 
-    CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
+        for region in 1:size(params.storagemap, 2)
+            # Find battery storage indices in this region
+            battery_indices = findall(
+                i ->
+                    params.Eeta[i] == 0.9 &&
+                        params.storagemap[i, region] == 1,
+                1:length(params.Eeta),
+            )
 
-    # Now, remove the aggregated entries and update params
-    # Append new entries
-    params.Eeta = vcat(params.Eeta, new_Eeta)
-    params.EPC = vcat(params.EPC, new_EPC)
-    params.EPD = vcat(params.EPD, new_EPD)
-    params.ESOC = vcat(params.ESOC, new_ESOC)
-    params.ESOCini = vcat(params.ESOCini, new_ESOCini)
-    params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+            if isempty(battery_indices)
+                continue
+            end
 
-    # Create a mask that is true for indices that should be kept
-    remove_indices = sort(unique(remove_indices))
-    mask = trues(length(params.Eeta))
-    mask[remove_indices] .= false
-    params.Eeta = params.Eeta[mask]
-    params.EPC = params.EPC[mask]
-    params.EPD = params.EPD[mask]
-    params.ESOC = params.ESOC[mask]
-    params.ESOCini = params.ESOCini[mask]
-    params.EStrategic = params.EStrategic[mask]
-    params.storagemap = new_storagemap[mask, :]
+            # Aggregate values
+            total_EPC = sum(params.EPC[battery_indices])
+            total_EPD = sum(params.EPD[battery_indices])
+            total_ESOC = sum(params.ESOC[battery_indices])
+            total_ESOCini = sum(params.ESOCini[battery_indices])
+
+            # Prepare data for two new storages
+            append!(new_Eeta, [0.9, 0.9])
+            append!(new_EPC, [total_EPC * ratio, total_EPC * (1 - ratio)])
+            append!(new_EPD, [total_EPD * ratio, total_EPD * (1 - ratio)])
+            append!(new_ESOC, [total_ESOC * ratio, total_ESOC * (1 - ratio)])
+            append!(
+                new_ESOCini,
+                [total_ESOCini * ratio, total_ESOCini * (1 - ratio)],
+            )
+            append!(new_EStrategic, [1, 0])
+
+            # Update storagemap for new entries
+            # Assuming new_row_strategic is a 1xN vector
+            new_row_strategic = zeros(Int64, size(new_storagemap, 2))
+            new_row_strategic[region] = 1
+
+            # To add two identical rows to the matrix, ensure they are treated as separate rows
+            new_storagemap = vcat(
+                new_storagemap,
+                reshape(new_row_strategic, 1, :),
+                reshape(new_row_strategic, 1, :),
+            )
+
+            append!(remove_indices, battery_indices)
+        end
+
+        # Save the new entries to csv
+        df = DataFrame(
+            Eeta = new_Eeta,
+            EPC = new_EPC,
+            EPD = new_EPD,
+            ESOC = new_ESOC,
+            ESOCini = new_ESOCini,
+            EStrategic = new_EStrategic,  # Assuming you also have this array
+        )
+
+        CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
+
+        # Now, remove the aggregated entries and update params
+        # Append new entries
+        params.Eeta = vcat(params.Eeta, new_Eeta)
+        params.EPC = vcat(params.EPC, new_EPC)
+        params.EPD = vcat(params.EPD, new_EPD)
+        params.ESOC = vcat(params.ESOC, new_ESOC)
+        params.ESOCini = vcat(params.ESOCini, new_ESOCini)
+        params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+
+        # Create a mask that is true for indices that should be kept
+        remove_indices = sort(unique(remove_indices))
+        mask = trues(length(params.Eeta))
+        mask[remove_indices] .= false
+        params.Eeta = params.Eeta[mask]
+        params.EPC = params.EPC[mask]
+        params.EPD = params.EPD[mask]
+        params.ESOC = params.ESOC[mask]
+        params.ESOCini = params.ESOCini[mask]
+        params.EStrategic = params.EStrategic[mask]
+        params.storagemap = new_storagemap[mask, :]
+    end
     return params
 end
 

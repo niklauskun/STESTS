@@ -64,12 +64,12 @@ function unitcommitment(
         Min,
         sum(
             FuelAdjustment * params.GMC .* guc +
-            FuelAdjustment * params.GNLC .* u +
+            params.GNLC .* u +
             params.GSUC .* v,
         ) +
         sum(FuelAdjustment * GSMC .* gucs) +
         sum(300.0 .* d - 0.0 .* c) +
-        sum(VOLL .* s)
+        sum(VOLL .* s) - sun(50 .* gh + 50 .* gs + 50 .* gw) / Steps
     )
 
     # Bus wise load balance constraints with transmission
