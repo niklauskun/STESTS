@@ -8,7 +8,7 @@ RealTimeNoise = true
 Year = 2022
 # CurrentMix = true
 TransmissionCap = true
-DataName = "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2"
+DataName = "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_ReducedGeo.jld2"
 folder = "2032 ADS PCM V2.4.1 Public Data/Processed Data/" * "$Year"
 
 @info "Reading data from $folder..."
@@ -30,9 +30,13 @@ timereaddata = @elapsed begin
 
     # read generator data
     genmap = Matrix(
-        CSV.read(joinpath(folder, "ThermalGenMap_C.csv"), DataFrame)[:, 2:end],
+        CSV.read(joinpath(folder, "ThermalGenMap_C_ReducedGeo.csv"), DataFrame)[
+            :,
+            2:end,
+        ],
     ) # read generator map
-    gendata = CSV.read(joinpath(folder, "ThermalGen_C.csv"), DataFrame)
+    gendata =
+        CSV.read(joinpath(folder, "ThermalGen_C_ReducedGeo.csv"), DataFrame)
 
     GPmax = gendata[!, :"IOMaxCap(MW)"] # read generator maximum capacity, in MW
     GPmin = gendata[!, :"IOMinCap(MW)"] # read generator minimum capacity, in MW
