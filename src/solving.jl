@@ -948,6 +948,25 @@ function solving(
 
             writeUCtoCSV(params, output_folder, ucmodel, Udf, Vdf, Wdf, Sdf)
 
+            # If there's an outage end by the end of the day, immediately get the unit back to service
+            RTOInput =
+                convert(Matrix{Int}, RTO[:, 24*(d-1)+1:24*d+UCHorizon-24])
+            for i in axes(V, 1)
+                zero_indices = findall(x -> x == 0, RTOInput[i, :])
+
+                for index in zero_indices
+                    if index < size(RTOInput, 2) && RTOInput[i, index+1] == 1
+                        V[i, index+1] = 1
+                    end
+                end
+            end
+            # Update next day's initial generator status allign with real-time outage
+            for i in axes(U, 1)
+                if RTOInput[i, 24] == 0
+                    U[i, 24] = 0
+                end
+            end
+
             # Update status and must up/down constraints for next day
             SU = getLastOneIndex(V[:, 1:24], SU, params.GUT)
             SD = getLastOneIndex(W[:, 1:24], SD, params.GDT)
@@ -1006,19 +1025,6 @@ function solving(
             end
 
             # Pass day-ahead unit commitment results to economic dispatch model, repeat each hour for EDSteps
-            # If there's an outage end by the end of the day, immediately get the unit back to service
-            RTOInput =
-                convert(Matrix{Int}, RTO[:, 24*(d-1)+1:24*d+UCHorizon-24])
-            for i in axes(V, 1)
-                zero_indices = findall(x -> x == 0, RTOInput[i, :])
-
-                for index in zero_indices
-                    if index < size(RTOInput, 2) && RTOInput[i, index+1] == 1
-                        V[i, index+1] = 1
-                    end
-                end
-            end
-
             EDU = repeat(U, inner = (1, EDSteps))
             EDV = zeros(size(V, 1), size(V, 2) * EDSteps + EDHorizon)
             EDW = zeros(size(V, 1), size(V, 2) * EDSteps + EDHorizon)
