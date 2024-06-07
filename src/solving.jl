@@ -97,10 +97,10 @@ function setUCConstraints(
         if FORB
             for i in axes(params.GPIni, 1)
                 for h in 1:UCHorizon
-                    set_normalized_rhs(
-                        ucmodel[:UCMustRun][i, h],
-                        params.GMustRun[i] * DAOInput[i, h],
-                    )
+                    # set_normalized_rhs(
+                    #     ucmodel[:UCMustRun][i, h],
+                    #     params.GMustRun[i] * DAOInput[i, h],
+                    # )
                     set_normalized_rhs(
                         ucmodel[:UCForcedOutage][i, h],
                         DAOInput[i, h],
@@ -275,7 +275,7 @@ function setEDConstraints(
 
     for tp in 1:EDHorizon
         # Ad hoc method to solve initial generation output for ED model
-        if ts == 1 && tp == 1
+        if ts == 1 && tp == 1 # first day first time period
             for i in axes(params.GPIni, 1)
                 set_normalized_rhs(
                     edmodel[:RUIni][i],
@@ -293,7 +293,7 @@ function setEDConstraints(
                 # set_normalized_rhs(edmodel[:RUIni][i], GPini[i] + GRU[i])
                 # set_normalized_rhs(edmodel[:RDIni][i], -GPini[i] + GRD[i])
             end
-        elseif h == 1 && t == 1 && tp == 1
+        elseif h == 1 && t == 1 && tp == 1 # first time period for each day 
             for i in axes(params.GPIni, 1)
                 set_normalized_rhs(
                     edmodel[:RUIni][i],
@@ -800,6 +800,7 @@ function solving(
         df_day_ahead_profile = DataFrame(DAO, :auto)
         CSV.write(joinpath(output_folder, "UCOutage.csv"), df_day_ahead_profile)
     else
+        RTO = ones(Int, size(params.GPIni, 1), 8760)
         RTO_repeated = ones(Int, size(params.GPIni, 1), 8760 * EDSteps)
     end
 
@@ -1005,6 +1006,19 @@ function solving(
             end
 
             # Pass day-ahead unit commitment results to economic dispatch model, repeat each hour for EDSteps
+            # If there's an outage end by the end of the day, immediately get the unit back to service
+            RTOInput =
+                convert(Matrix{Int}, RTO[:, 24*(d-1)+1:24*d+UCHorizon-24])
+            for i in axes(V, 1)
+                zero_indices = findall(x -> x == 0, RTOInput[i, :])
+
+                for index in zero_indices
+                    if index < size(RTOInput, 2) && RTOInput[i, index+1] == 1
+                        V[i, index+1] = 1
+                    end
+                end
+            end
+
             EDU = repeat(U, inner = (1, EDSteps))
             EDV = zeros(size(V, 1), size(V, 2) * EDSteps + EDHorizon)
             EDW = zeros(size(V, 1), size(V, 2) * EDSteps + EDHorizon)

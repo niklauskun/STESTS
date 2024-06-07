@@ -195,11 +195,11 @@ function unitcommitment(
     )
 
     # Conventional generator must run constraints
-    @constraint(
-        ucmodel,
-        UCMustRun[i = 1:nucgen, h = 1:ntimepoints],
-        u[i, h] >= params.GMustRun[i]
-    )
+    # @constraint(
+    #     ucmodel,
+    #     UCMustRun[i = 1:nucgen, h = 1:ntimepoints],
+    #     u[i, h] >= params.GMustRun[i]
+    # )
 
     # Conventional generator forced outage constraints
     @constraint(
