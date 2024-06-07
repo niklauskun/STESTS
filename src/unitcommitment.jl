@@ -16,6 +16,7 @@ function unitcommitment(
     VOLL::Float64 = 1000.0, # value of lost load
     RM::Float64 = 0.03, # reserve margin
     FuelAdjustment::Float64 = 1.0, # fuel adjustment
+    NLCAdjustment::Float64 = 1.0, # no-load cost adjustment
 )::JuMP.Model
     GSMC = repeat(params.GSMC, outer = (1, 1, Horizon))
     UCL = convert(Matrix{Float64}, params.UCL[1:Horizon, :]')
@@ -64,12 +65,12 @@ function unitcommitment(
         Min,
         sum(
             FuelAdjustment * params.GMC .* guc +
-            params.GNLC .* u +
+            NLCAdjustment * params.GNLC .* u +
             params.GSUC .* v,
         ) +
         sum(FuelAdjustment * GSMC .* gucs) +
         sum(300.0 .* d - 0.0 .* c) +
-        sum(VOLL .* s) - sum(50 .* gh + 50 .* gs + 50 .* gw) / Steps
+        sum(VOLL .* s) - sum(50 .* gh + 50 .* gs + 50 .* gw)
     )
 
     # Bus wise load balance constraints with transmission
@@ -121,7 +122,10 @@ function unitcommitment(
     @constraint(
         ucmodel,
         Reserve[h = 1:ntimepoints],
-        sum(grr[:, h]) >= RM * sum(UCL, dims = 1)[h]
+        sum(grr[:, h]) >=
+        RM * sum(UCL, dims = 1)[h] +
+        0.05 * sum(gw[:, h]) +
+        0.05 * sum(gs[:, h])
     )
 
     # # Transmission capacity limits
@@ -195,6 +199,13 @@ function unitcommitment(
         ucmodel,
         UCMustRun[i = 1:nucgen, h = 1:ntimepoints],
         u[i, h] >= params.GMustRun[i]
+    )
+
+    # Conventional generator forced outage constraints
+    @constraint(
+        ucmodel,
+        UCForcedOutage[i = 1:nucgen, h = 1:ntimepoints],
+        u[i, h] <= 1
     )
 
     # Conventional generator segment constraints

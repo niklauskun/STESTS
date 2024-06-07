@@ -44,6 +44,7 @@ function solvingError(model::JuMP.Model, type::String, d = 0, h = 0, t = 0)
 end
 
 function setUCConstraints(
+    params::STESTS.ModelParams,
     ucmodel::JuMP.Model,
     ucpmodel::JuMP.Model,
     LInput::Matrix{Float64},
@@ -53,6 +54,8 @@ function setUCConstraints(
     DADBids::Matrix{Float64},
     DAdb::Matrix{Float64},
     DAcb::Matrix{Float64},
+    FORB::Bool,
+    DAOInput::Matrix{Int},
     UCHorizon::Int = 24,
     RM::Float64 = 0.03,
 )
@@ -90,6 +93,24 @@ function setUCConstraints(
             set_objective_coefficient(ucmodel, ucmodel[:c][i, h], DAcb[i, h])
             set_objective_coefficient(ucpmodel, ucpmodel[:d][i, h], DAdb[i, h])
             set_objective_coefficient(ucpmodel, ucpmodel[:c][i, h], DAcb[i, h])
+        end
+        if FORB
+            for i in axes(params.GPIni, 1)
+                for h in 1:UCHorizon
+                    set_normalized_rhs(
+                        ucmodel[:UCMustRun][i, h],
+                        params.GMustRun[i] * DAOInput[i, h],
+                    )
+                    set_normalized_rhs(
+                        ucmodel[:UCForcedOutage][i, h],
+                        DAOInput[i, h],
+                    )
+                    set_normalized_rhs(
+                        ucmodel[:UTime][i, h],
+                        1 - DAOInput[i, h],
+                    )
+                end
+            end
         end
     end
 end
@@ -205,6 +226,7 @@ function setEDConstraints(
     EDSteps,
     BAWindow,
     strategic,
+    FORB,
     bidmodels,
     db,
     cb,
@@ -213,9 +235,12 @@ function setEDConstraints(
     ESSeg,
     RTDBids,
     RTCBids,
+    ESPeakBid,
+    ESPeakBidAdjustment,
     AdjustedEDL,
     AdjustedEDSolar,
     AdjustedEDWind,
+    RTOInput,
     all_UCprices_df,
     all_EDprices_df,
     EDHorizon,
@@ -262,7 +287,8 @@ function setEDConstraints(
                     edmodel[:RDIni][i],
                     -params.GPIni[i] +
                     params.GRD[i] +
-                    (params.GPmin[i]) * EDW[i, (h-1)*EDSteps+t+tp-1],
+                    (params.GPmin[i]) * EDW[i, (h-1)*EDSteps+t+tp-1] +
+                    (1 - RTOInput[i, tp]) * 10000,
                 )
                 # set_normalized_rhs(edmodel[:RUIni][i], GPini[i] + GRU[i])
                 # set_normalized_rhs(edmodel[:RDIni][i], -GPini[i] + GRD[i])
@@ -279,7 +305,8 @@ function setEDConstraints(
                     edmodel[:RDIni][i],
                     -EDGPIni[i] +
                     params.GRD[i] / EDSteps +
-                    (params.GPmax[i]) * EDW[i, 1],
+                    (params.GPmax[i]) * EDW[i, 1] +
+                    (1 - RTOInput[i, 1]) * 10000,
                 )
                 # set_normalized_rhs(edmodel[:RUIni][i], GPini[i] + GRU[i])
                 # set_normalized_rhs(edmodel[:RDIni][i], -GPini[i] + GRD[i])
@@ -297,6 +324,11 @@ function setEDConstraints(
                                 vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
                                 ESMC
                             ) / EDSteps
+                        db[i, :] = map(
+                            x ->
+                                x > ESPeakBid ? x * ESPeakBidAdjustment : x,
+                            db[i, :],
+                        )
                         cb[i, :] =
                             -vrt[i, :, (h-1)*EDSteps+t] .* params.Eeta[i] /
                             EDSteps
@@ -332,6 +364,10 @@ function setEDConstraints(
                     db[i, :] =
                         (vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+ ESMC) /
                         EDSteps
+                    db[i, :] = map(
+                        x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
+                        db[i, :],
+                    )
                     cb[i, :] =
                         -vrt[i, :, (h-1)*EDSteps+t] .* params.Eeta[i] / EDSteps
                 else
@@ -348,6 +384,10 @@ function setEDConstraints(
                     enforce_strictly_decreasing_vector(vavg)
                     cb[i, :] .= -vavg .* 0.9 ./ EDSteps
                     db[i, :] .= (vavg ./ 0.9 .+ ESMC) ./ EDSteps
+                    db[i, :] = map(
+                        x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
+                        db[i, :],
+                    )
                 end
                 if tp == 1
                     cbdf = DataFrame(12 * cb[i, :]', :auto)
@@ -397,17 +437,36 @@ function setEDConstraints(
             set_normalized_rhs(edmodel[:LoadBalance][z, tp], EDLInput[z, tp])
         end
         for i in axes(U, 1)
+            # set_normalized_rhs(
+            #     edmodel[:UCCapU][i, tp],
+            #     EDU[i, (h-1)*EDSteps+t+tp-1] * params.GPmax[i],
+            # )
+            # set_normalized_rhs(
+            #     edmodel[:UCCapL][i, tp],
+            #     EDU[i, (h-1)*EDSteps+t+tp-1] * params.GPmin[i],
+            # )
+            # set_normalized_rhs(
+            #     edmodel[:UCGenSeg1][i, tp],
+            #     EDU[i, (h-1)*EDSteps+t+tp-1] * params.GPmin[i],
+            # )
+            # TODO Replace this
             set_normalized_rhs(
                 edmodel[:UCCapU][i, tp],
-                EDU[i, (h-1)*EDSteps+t+tp-1] * params.GPmax[i],
+                RTOInput[i, tp] *
+                EDU[i, (h-1)*EDSteps+t+tp-1] *
+                params.GPmax[i],
             )
             set_normalized_rhs(
                 edmodel[:UCCapL][i, tp],
-                EDU[i, (h-1)*EDSteps+t+tp-1] * params.GPmin[i],
+                RTOInput[i, tp] *
+                EDU[i, (h-1)*EDSteps+t+tp-1] *
+                params.GPmin[i],
             )
             set_normalized_rhs(
                 edmodel[:UCGenSeg1][i, tp],
-                EDU[i, (h-1)*EDSteps+t+tp-1] * params.GPmin[i],
+                RTOInput[i, tp] *
+                EDU[i, (h-1)*EDSteps+t+tp-1] *
+                params.GPmin[i],
             )
         end
         for i in axes(EDHAvailInput, 1)
@@ -434,10 +493,17 @@ function setEDConstraints(
                 )
             end
             for i in axes(params.GPIni, 1)
+                # set_normalized_rhs(
+                #     edmodel[:RD][i, tp],
+                #     params.GRD[i] / EDSteps +
+                #     params.GPmax[i] * EDW[i, (h-1)*EDSteps+t+tp-1],
+                # )
+                # TODO: Replace this
                 set_normalized_rhs(
                     edmodel[:RD][i, tp],
                     params.GRD[i] / EDSteps +
-                    params.GPmax[i] * EDW[i, (h-1)*EDSteps+t+tp-1],
+                    params.GPmax[i] * EDW[i, (h-1)*EDSteps+t+tp-1] +
+                    RTOInput[i, tp] * 10000,
                 )
             end
         end
@@ -448,8 +514,7 @@ function writeEDtoCSVandUpdateSOC(
     params,
     output_folder::String,
     edmodel,
-    EDDBidInput,
-    EDCBidInput,
+    RTO_repeated,
     EDU,
     EDV,
     EDW,
@@ -621,12 +686,21 @@ function writeEDtoCSVandUpdateSOC(
             params.GRU[i] / EDSteps +
             (params.GPmin[i]) * EDV[i, (h-1)*EDSteps+t+1],
         )
+        # set_normalized_rhs(
+        #     edmodel[:RDIni][i],
+        #     -EDGPIni[i] +
+        #     params.GRD[i] / EDSteps +
+        #     (params.GPmax[i]) * EDW[i, (h-1)*EDSteps+t+1],
+        # )
+        # TODO: Replace this
         set_normalized_rhs(
             edmodel[:RDIni][i],
             -EDGPIni[i] +
             params.GRD[i] / EDSteps +
-            (params.GPmax[i]) * EDW[i, (h-1)*EDSteps+t+1],
+            (params.GPmax[i]) * EDW[i, (h-1)*EDSteps+t+1] +
+            (1 - RTO_repeated[i, (d-1)*EDSteps*24+(h-1)*EDSteps+t+1]) * 10000,
         )
+
         # set_normalized_rhs(edmodel[:RUIni][i], EDGPini[i] + GRU[i] + GPmin[i]*EDV[i,(h - 1) * EDSteps + t + 1])
         # set_normalized_rhs(edmodel[:RDIni][i], -EDGPini[i] + GRD[i] + GPmin[i]*EDW[i,(h - 1) * EDSteps + t + 1])
         # end
@@ -644,6 +718,7 @@ function solving(
     params::STESTS.ModelParams,
     Nday::Int,
     strategic::Bool,
+    FORB::Bool,
     DADBids::Matrix{Float64},
     DACBids::Matrix{Float64},
     RTDBids::Matrix{Float64},
@@ -663,8 +738,12 @@ function solving(
     VOLL::Float64 = 9000.0,
     RM::Float64 = 0.03,
     FuelAdjustment::Float64 = 1.0,
+    NLCAdjustment::Float64 = 1.0,
     ErrorAdjustment::Float64 = 1.0,
     LoadAdjustment::Float64 = 1.0,
+    ESPeakBidAdjustment::Float64 = 1.0,
+    ESPeakBid::Float64 = 100.0,
+    seed::Int = 0,
 )
     GSMC = repeat(params.GSMC, outer = (1, 1, UCHorizon))
     EDGSMC = repeat(params.GSMC, outer = (1, 1, EDHorizon))
@@ -712,6 +791,18 @@ function solving(
     WindError = Wind_repeated - params.EDWAvail
     AdjustedEDWind = Wind_repeated - WindError * ErrorAdjustment
 
+    if FORB
+        RTO = generate_real_time_outage(params.GFOR, params.GOD, seed)
+        RTO_repeated = repeat(RTO, inner = (1, EDSteps))
+        DAO = generate_day_ahead_outage(RTO)
+        df_outage_profile = DataFrame(RTO, :auto)
+        CSV.write(joinpath(output_folder, "EDOutage.csv"), df_outage_profile)
+        df_day_ahead_profile = DataFrame(DAO, :auto)
+        CSV.write(joinpath(output_folder, "UCOutage.csv"), df_day_ahead_profile)
+    else
+        RTO_repeated = ones(Int, size(params.GPIni, 1), 8760 * EDSteps)
+    end
+
     set_optimizer_attribute(ucmodel, "MIPGap", 0.001)
 
     for d in 1:Nday
@@ -736,6 +827,12 @@ function solving(
             Matrix{Float64},
             params.WAvail[24*(d-1)+1:24*d+UCHorizon-24, :]',
         )
+        if FORB
+            DAOInput =
+                convert(Matrix{Int}, DAO[:, 24*(d-1)+1:24*d+UCHorizon-24])
+        else
+            DAOInput = ones(Int, size(params.GPIni, 1), UCHorizon)
+        end
 
         if d == 1 || !strategic
             DAdb = convert(
@@ -769,6 +866,10 @@ function solving(
                         Vector{Float64},
                         DADBids[1, 24*(d-1)+1:24*d+UCHorizon-24],
                     )
+                    DAdb[i, :] = map(
+                        x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
+                        DAdb[i, :],
+                    )
                     DAcb[i, :] = convert(
                         Vector{Float64},
                         DACBids[1, 24*(d-1)+1:24*d+UCHorizon-24],
@@ -792,6 +893,7 @@ function solving(
 
         # Set unit commitment model constraints
         setUCConstraints(
+            params,
             ucmodel,
             ucpmodel,
             LInput,
@@ -801,6 +903,8 @@ function solving(
             DADBids,
             DAdb,
             DAcb,
+            FORB,
+            DAOInput,
             UCHorizon,
             RM,
         )
@@ -828,8 +932,8 @@ function solving(
                 VOLLcost[d] +
                 EScost[d] +
                 sum(
-                    value.(ucmodel[:u])[:, 1:24] .* params.GNLC +
-                    value.(ucmodel[:v])[:, 1:24] .* params.GSUC,
+                    NLCAdjustment * value.(ucmodel[:u])[:, 1:24] .*
+                    params.GNLC + value.(ucmodel[:v])[:, 1:24] .* params.GSUC,
                 )
             # UCcost[d] = objective_value(ucmodel)
             U = convert(Matrix{Int64}, round.(value.(ucmodel[:u])))
@@ -900,7 +1004,7 @@ function solving(
                 end
             end
 
-            # Solving economic dispatch model
+            # Pass day-ahead unit commitment results to economic dispatch model, repeat each hour for EDSteps
             EDU = repeat(U, inner = (1, EDSteps))
             EDV = zeros(size(V, 1), size(V, 2) * EDSteps + EDHorizon)
             EDW = zeros(size(V, 1), size(V, 2) * EDSteps + EDHorizon)
@@ -910,13 +1014,14 @@ function solving(
                 EDW[:, (i-1)*EDSteps+1] = W[:, i]
             end
 
+            # Solving economic dispatch model
             for h in 1:24
                 for t in 1:EDSteps
                     ts = ((d - 1) * 24 + h - 1) * EDSteps + t # time step
-                    EDDBidInput =
-                        convert(Matrix{Float64}, RTDBids[:, ts:ts+EDHorizon-1])
-                    EDCBidInput =
-                        convert(Matrix{Float64}, RTCBids[:, ts:ts+EDHorizon-1])
+                    RTOInput = convert(
+                        Matrix{Float64},
+                        RTO_repeated[:, ts:ts+EDHorizon-1],
+                    )
 
                     setEDConstraints(
                         params,
@@ -930,6 +1035,7 @@ function solving(
                         EDSteps,
                         BAWindow,
                         strategic,
+                        FORB,
                         bidmodels,
                         db,
                         cb,
@@ -938,9 +1044,12 @@ function solving(
                         ESSeg,
                         RTDBids,
                         RTCBids,
+                        ESPeakBid,
+                        ESPeakBidAdjustment,
                         AdjustedEDL,
                         AdjustedEDSolar,
                         AdjustedEDWind,
+                        RTOInput,
                         all_UCprices_df,
                         all_EDprices_df,
                         EDHorizon,
@@ -962,8 +1071,7 @@ function solving(
                                 params,
                                 output_folder::String,
                                 edmodel,
-                                EDDBidInput,
-                                EDCBidInput,
+                                RTO_repeated,
                                 EDU,
                                 EDV,
                                 EDW,
@@ -1030,4 +1138,86 @@ function solving(
     EDcostdf = DataFrame(cost = EDcost)
     CSV.write(joinpath(output_folder, "EDcost.csv"), EDcostdf, append = true)
     return UCcost, EDcost
+end
+
+function generate_real_time_outage(
+    GFOR::Vector{Float64},
+    GOD::Vector{Int64},
+    seed::Int,
+)
+    Random.seed!(seed)  # Set the random seed for reproducibility
+    num_generators = length(GFOR)
+    hours_per_year = 8760
+    outage_profile = ones(Int, num_generators, hours_per_year)
+
+    # Generate real-time outage profile
+    for i in 1:num_generators
+        total_outage_hours = round(Int, hours_per_year * GFOR[i])
+        outage_duration = GOD[i]
+        remaining_outage_hours = total_outage_hours
+
+        while remaining_outage_hours > 0
+            if remaining_outage_hours >= outage_duration
+                outage_start = rand(1:(hours_per_year-outage_duration+1))
+                outage_end =
+                    min(outage_start + outage_duration - 1, hours_per_year)
+                actual_outage_duration = outage_end - outage_start + 1
+
+                # Ensure no overlap of outages
+                if sum(outage_profile[i, outage_start:outage_end]) ==
+                   actual_outage_duration
+                    outage_profile[i, outage_start:outage_end] .= 0
+                    remaining_outage_hours -= actual_outage_duration
+                end
+            end
+
+            # If remaining_outage_hours is less than outage_duration, we need to handle it separately
+            if remaining_outage_hours > 0 &&
+               remaining_outage_hours < outage_duration
+                outage_start = rand(1:(hours_per_year-remaining_outage_hours+1))
+                outage_end = outage_start + remaining_outage_hours - 1
+
+                if sum(outage_profile[i, outage_start:outage_end]) ==
+                   remaining_outage_hours
+                    outage_profile[i, outage_start:outage_end] .= 0
+                    remaining_outage_hours = 0
+                end
+            end
+        end
+    end
+    return outage_profile
+end
+
+function generate_day_ahead_outage(outage_profile)
+    n_generators, n_hours = size(outage_profile)
+    hours_per_day = 24
+    day_ahead_profile = copy(outage_profile)  # Start with a copy of the real-time profile
+
+    for g in 1:n_generators
+        is_outage = false
+        start_hour = 0
+
+        for h in 1:n_hours
+            if outage_profile[g, h] == 0
+                if !is_outage
+                    is_outage = true
+                    start_hour = h
+                    # Calculate the day containing the first zero and set it to all ones in the day-ahead profile
+                    start_day = div(start_hour - 1, hours_per_day)
+                    day_start_hour = start_day * hours_per_day + 1
+                    day_end_hour = (start_day + 1) * hours_per_day
+                    day_ahead_profile[
+                        g,
+                        day_start_hour:min(day_end_hour, n_hours),
+                    ] .= 1
+                end
+            else
+                if is_outage
+                    is_outage = false
+                end
+            end
+        end
+    end
+
+    return day_ahead_profile
 end

@@ -55,7 +55,7 @@ function economicdispatch(
     # @variable(edmodel, gr[1:nrenewable, 1:ntimepoints] >= 0) # Renewable output
     @variable(edmodel, gs[1:nbus, 1:ntimepoints] >= 0) # Solar output
     @variable(edmodel, gw[1:nbus, 1:ntimepoints] >= 0) # Wind output
-    @variable(edmodel, 0 <= s[1:nbus, 1:40, 1:ntimepoints] <= 100) # Slack variable
+    @variable(edmodel, 0 <= s[1:nbus, 1:50, 1:ntimepoints] <= 100) # Slack variable
     # @variable(edmodel, c[1:nstorage, 1:ntimepoints] >= 0) # Storage charging
     # @variable(edmodel, d[1:nstorage, 1:ntimepoints] >= 0) # Storage discharging
     # @variable(edmodel, e[1:nstorage, 1:ntimepoints] >= 0) # Storage energy level

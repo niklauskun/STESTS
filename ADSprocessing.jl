@@ -8,7 +8,7 @@ RealTimeNoise = true
 Year = 2022
 # CurrentMix = true
 TransmissionCap = true
-DataName = "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_ReducedGeo.jld2"
+DataName = "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2"
 folder = "2032 ADS PCM V2.4.1 Public Data/Processed Data/" * "$Year"
 
 @info "Reading data from $folder..."
@@ -30,21 +30,39 @@ timereaddata = @elapsed begin
 
     # read generator data
     genmap = Matrix(
-        CSV.read(joinpath(folder, "ThermalGenMap_C_ReducedGeo.csv"), DataFrame)[
-            :,
-            2:end,
-        ],
+        CSV.read(joinpath(folder, "ThermalGenMap_C.csv"), DataFrame)[:, 2:end],
     ) # read generator map
-    gendata =
-        CSV.read(joinpath(folder, "ThermalGen_C_ReducedGeo.csv"), DataFrame)
+    gendata = CSV.read(joinpath(folder, "ThermalGen_C.csv"), DataFrame)
 
     GPmax = gendata[!, :"IOMaxCap(MW)"] # read generator maximum capacity, in MW
     GPmin = gendata[!, :"IOMinCap(MW)"] # read generator minimum capacity, in MW
     GMustRun = gendata[!, :"MustRun"] # read generator must run status
     GNLC = gendata[!, :"NoLoadCost(\$)"]  # read generator non-load cost, in $
     GMC = gendata[!, :"VOM Cost"]  # read generator VOM cost, in $/MW
-    GSMC = Matrix(gendata[:, 25:29])  # read generator segment marginal cost, in $/MW
-    GINCPmax = Matrix(gendata[:, 5:9]) # read generator segment maximum capacity, in MW
+    GSMC = Matrix(
+        gendata[
+            :,
+            [
+                raw"IncCost2($/MW)",
+                raw"IncCost3($/MW)",
+                raw"IncCost4($/MW)",
+                raw"IncCost5($/MW)",
+                raw"IncCost6($/MW)",
+            ],
+        ],
+    ) # read generator segment marginal cost, in $/MW
+    GINCPmax = Matrix(
+        gendata[
+            :,
+            [
+                "IncCap2(MW)",
+                "IncCap3(MW)",
+                "IncCap4(MW)",
+                "IncCap5(MW)",
+                "IncCap6(MW)",
+            ],
+        ],
+    ) # read generator segment maximum capacity, in MW
     GType = gendata[!, :"SubType"] # read generator type
     GRU = gendata[!, :"RampUp Rate(MW/minute)"] * 60 # read generator ramp up rate, in MW/hour
     GRD = gendata[!, :"RampDn Rate(MW/minute)"] * 60 # read generator ramp down rate, in MW/hour
@@ -52,6 +70,8 @@ timereaddata = @elapsed begin
     GUT = gendata[!, :"MinimumUpTime(hr)"] # read generator minimum up time, in hour
     GDT = gendata[!, :"MinimumDownTime(hr)"] # read generator minimum down time, in hour
     GPIni = gendata[!, :"InitialDispatch(MW)"] # read generator initial output
+    GFOR = gendata[!, :"FOR"] # read generator forced outage rate
+    GOD = gendata[!, :"Outage Duration(hr)"] # read generator outage duration, in hr
     @assert length(GPmax) ==
             length(GPmin) ==
             length(GMustRun) ==
@@ -203,6 +223,8 @@ timereaddata = @elapsed begin
     GUT = convert(Vector{Int64}, GUT)
     GDT = convert(Vector{Int64}, GDT)
     GPIni = convert(Vector{Float64}, GPIni)
+    GFOR = convert(Vector{Float64}, GFOR)
+    GOD = convert(Vector{Int64}, GOD)
     # hydromap = convert(Matrix{Int64}, hydromap)
     HPmax = convert(Vector{Float64}, HPmax)
     HPmin = convert(Vector{Float64}, HPmin)
@@ -370,6 +392,10 @@ timereaddata = @elapsed begin
         GDT,
         "GPIni",
         GPIni,
+        "GFOR",
+        GFOR,
+        "GOD",
+        GOD,
         # "hydromap",
         # hydromap,
         "HPmax",

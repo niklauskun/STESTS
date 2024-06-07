@@ -20,6 +20,8 @@ mutable struct ModelParams
     GUT::Vector{Int64}
     GDT::Vector{Int64}
     GPIni::Vector{Float64}
+    GFOR::Vector{Float64}
+    GOD::Vector{Int64}
     # hydromap::Matrix{Int64}
     HPmin::Vector{Float64}
     HAvail::Matrix{Float64}
@@ -75,6 +77,8 @@ function read_jld2(filename::String)
     GUT = data["GUT"]
     GDT = data["GDT"]
     GPIni = data["GPIni"]
+    GFOR = data["GFOR"]
+    GOD = data["GOD"]
     # hydromap = data["hydromap"]
     HPmin = data["HPmin"]
     HAvail = data["HAvail"]
@@ -115,6 +119,8 @@ function read_jld2(filename::String)
         GUT,
         GDT,
         GPIni,
+        GFOR,
+        GOD,
         # hydromap,
         HPmin,
         HAvail,

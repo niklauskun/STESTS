@@ -114,7 +114,10 @@ function unitcommitmentprice(
     @constraint(
         ucpmodel,
         Reserve[h = 1:ntimepoints],
-        sum(grr[:, h]) >= RM * sum(UCL, dims = 1)[h]
+        sum(grr[:, h]) >=
+        RM * sum(UCL, dims = 1)[h] +
+        0.05 * sum(gw[:, h]) +
+        0.05 * sum(gs[:, h])
     )
 
     # # Transmission capacity limits

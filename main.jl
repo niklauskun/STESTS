@@ -6,13 +6,15 @@ params = STESTS.read_jld2(
     "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
 )
 strategic = true
+FORB = true
+seed = 123
 heto = false
 RandomModel = false
 RandomSeed = 1
-ratio = 0.0
+ratio = 1.0
 RM = 0.03
 VOLL = 9000.0
-NDay = 364
+NDay = 2
 UCHorizon = Int(25) # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
 EDHorizon = Int(1) # optimization horizon for economic dispatch model, 1 without look-ahead, 12 with 1-hour look-ahead
 EDSteps = Int(12) # number of 5-min intervals in a hour
@@ -32,24 +34,26 @@ x_values = 0:100:4900
 
 # Compute the quadratic function for each x value and store the results in an array
 y_values = [quadratic_function(x) for x in x_values]
-# PriceCap = repeat(
-#     repeat(y_values', outer = (size(params.UCL, 2), 1)),
-#     outer = (1, 1, EDHorizon),
-# )
 PriceCap = repeat(
-    repeat(
-        (range(220, stop = 1000, length = 40))',
-        outer = (size(params.UCL, 2), 1),
-    ),
+    repeat(y_values', outer = (size(params.UCL, 2), 1)),
     outer = (1, 1, EDHorizon),
 )
-FuelAdjustment = 2.0
+# PriceCap = repeat(
+#     repeat(
+#         (range(220, stop = 1000, length = 40))',
+#         outer = (size(params.UCL, 2), 1),
+#     ),
+#     outer = (1, 1, EDHorizon),
+# )
+FuelAdjustment = 1.0
+NLCAdjustment = 1.0
 ErrorAdjustment = 0.25
 LoadAdjustment = 1.0
-SegmentAdjustment = [1.0, 2.0, 3.0, 4.0, 5.0]
+SegmentAdjustment = [1.0, 1.0, 1.0, 1.0, 1.0]
 params.GSMC = params.GSMC .* SegmentAdjustment'
+ESPeakBidAdjustment = 1.0
+ESPeakBid = 100.0
 GSMCSeg = join(SegmentAdjustment, "-")
-SegmentAdjustment = []
 if Year == 2022
     ESAdjustment = 1.0
 elseif Year == 2030
@@ -61,7 +65,7 @@ elseif Year == 2050
 end
 
 output_folder =
-    "output/Strategic/6RegionsDummyHydro/" *
+    "output/Strategic/FOR/" *
     "$Year" *
     "/UC" *
     "$UCHorizon" *
@@ -69,6 +73,8 @@ output_folder =
     "$EDHorizon" *
     "_Strategic_" *
     "$strategic" *
+    "_FORB_" *
+    "$FORB" *
     "_ratio" *
     "$ratio" *
     "_Seg" *
@@ -77,8 +83,14 @@ output_folder =
     "$BAWindow" *
     "_Fuel" *
     "$FuelAdjustment" *
+    "_NLC" *
+    "$NLCAdjustment" *
     "_Error" *
     "$ErrorAdjustment" *
+    "_ESPeakBidAdjustment" *
+    "$ESPeakBidAdjustment" *
+    "_ESPeakBid" *
+    "$ESPeakBid" *
     "NegativeRenew" *
     "_" *
     "$GSMCSeg"
@@ -144,6 +156,7 @@ ucmodel = STESTS.unitcommitment(
     VOLL = VOLL, # value of lost load, $/MWh
     RM = RM, # reserve margin
     FuelAdjustment = FuelAdjustment,
+    NLCAdjustment = NLCAdjustment,
 )
 
 # Edit unit commitment model here
@@ -197,6 +210,7 @@ timesolve = @elapsed begin
         params,
         NDay,
         strategic,
+        FORB,
         DADBids,
         DACBids,
         RTDBids,
@@ -216,8 +230,12 @@ timesolve = @elapsed begin
         VOLL = VOLL,
         RM = RM,
         FuelAdjustment = FuelAdjustment,
+        NLCAdjustment = NLCAdjustment,
         ErrorAdjustment = ErrorAdjustment,
         LoadAdjustment = LoadAdjustment,
+        ESPeakBidAdjustment = ESPeakBidAdjustment,
+        ESPeakBid = ESPeakBid,
+        seed = seed,
     )
 end
 @info "Solving took $timesolve seconds."
