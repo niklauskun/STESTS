@@ -97,10 +97,10 @@ function setUCConstraints(
         if FORB
             for i in axes(params.GPIni, 1)
                 for h in 1:UCHorizon
-                    # set_normalized_rhs(
-                    #     ucmodel[:UCMustRun][i, h],
-                    #     params.GMustRun[i] * DAOInput[i, h],
-                    # )
+                    set_normalized_rhs(
+                        ucmodel[:UCMustRun][i, h],
+                        params.GMustRun[i] * DAOInput[i, h],
+                    )
                     set_normalized_rhs(
                         ucmodel[:UCForcedOutage][i, h],
                         DAOInput[i, h],
