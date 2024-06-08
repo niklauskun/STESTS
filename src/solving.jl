@@ -105,10 +105,10 @@ function setUCConstraints(
                         ucmodel[:UCForcedOutage][i, h],
                         DAOInput[i, h],
                     )
-                    set_normalized_rhs(
-                        ucmodel[:UTime][i, h],
-                        1 - DAOInput[i, h],
-                    )
+                    # set_normalized_rhs(
+                    #     ucmodel[:UTime][i, h],
+                    #     1 - DAOInput[i, h],
+                    # )
                 end
             end
         end
@@ -972,6 +972,13 @@ function solving(
             SD = getLastOneIndex(W[:, 1:24], SD, params.GDT)
             SUInt = zeros(Int, size(params.GPIni, 1), UCHorizon)
             SDInt = zeros(Int, size(params.GPIni, 1), UCHorizon)
+
+            # If at the begining of the next day, the generator is in outage, then clear remaining must stay on hour
+            for i in axes(RTO, 1)
+                if RTO[i, 24*d+1] == 0
+                    SU[i] = 0
+                end
+            end
 
             for i in axes(params.GPIni, 1)
                 num_ones_SU = min(SU[i], UCHorizon)
