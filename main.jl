@@ -45,11 +45,11 @@ PriceCap = repeat(
 #     ),
 #     outer = (1, 1, EDHorizon),
 # )
-FuelAdjustment = 1.0
-NLCAdjustment = 1.0
+FuelAdjustment = 2.0
+NLCAdjustment = 2.0
 ErrorAdjustment = 0.25
 LoadAdjustment = 1.0
-SegmentAdjustment = [1.0, 1.0, 1.0, 1.0, 1.0]
+SegmentAdjustment = [1.0, 2.0, 2.0, 2.0, 2.0]
 params.GSMC = params.GSMC .* SegmentAdjustment'
 ESPeakBidAdjustment = 1.0
 ESPeakBid = 100.0
