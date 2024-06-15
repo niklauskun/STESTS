@@ -503,7 +503,7 @@ function setEDConstraints(
                     edmodel[:RD][i, tp],
                     params.GRD[i] / EDSteps +
                     params.GPmax[i] * EDW[i, (h-1)*EDSteps+t+tp-1] +
-                    RTOInput[i, tp] * 10000,
+                    (1 - RTOInput[i, tp]) * 10000,
                 )
             end
         end

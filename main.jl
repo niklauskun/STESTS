@@ -30,14 +30,14 @@ function quadratic_function(x)
 end
 
 # Generate the array of x values
-x_values = 0:100:4900
+# x_values = 0:100:4900
 
-# Compute the quadratic function for each x value and store the results in an array
-y_values = [quadratic_function(x) for x in x_values]
-PriceCap = repeat(
-    repeat(y_values', outer = (size(params.UCL, 2), 1)),
-    outer = (1, 1, EDHorizon),
-)
+# # Compute the quadratic function for each x value and store the results in an array
+# y_values = [quadratic_function(x) for x in x_values]
+# PriceCap = repeat(
+#     repeat(y_values', outer = (size(params.UCL, 2), 1)),
+#     outer = (1, 1, EDHorizon),
+# )
 # PriceCap = repeat(
 #     repeat(
 #         (range(220, stop = 1000, length = 40))',
@@ -45,6 +45,10 @@ PriceCap = repeat(
 #     ),
 #     outer = (1, 1, EDHorizon),
 # )
+PriceCap = repeat(
+    repeat(fill(1200.0, 50)', outer = (size(params.UCL, 2), 1)),
+    outer = (1, 1, EDHorizon),
+)
 FuelAdjustment = 2.0
 NLCAdjustment = 2.0
 ErrorAdjustment = 0.25
@@ -65,7 +69,7 @@ elseif Year == 2050
 end
 
 output_folder =
-    "output/Strategic/FOR/" *
+    "output/Strategic/PriceCap1200/" *
     "$Year" *
     "/UC" *
     "$UCHorizon" *
@@ -130,7 +134,13 @@ if strategic
     elseif ratio == 0.0
         println("No AI-Powered BES.")
     else
-        STESTS.update_battery_storage!(params, ratio, output_folder)
+        STESTS.update_battery_storage!(
+            params,
+            ratio,
+            output_folder,
+            heto,
+            ESAdjustment,
+        )
     end
     # bidmodels = STESTS.loadbidmodels(model_filenames)
     bidmodels = STESTS.loadbidmodels(model_base_folder)
