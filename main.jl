@@ -50,7 +50,7 @@ PriceCap = repeat(
     outer = (1, 1, EDHorizon),
 )
 FuelAdjustment = 2.0
-NLCAdjustment = 2.0
+NLCAdjustment = 1.2
 ErrorAdjustment = 0.25
 LoadAdjustment = 1.0
 SegmentAdjustment = [1.0, 2.0, 2.0, 2.0, 2.0]
@@ -69,11 +69,9 @@ elseif Year == 2050
 end
 
 output_folder =
-    "output/Strategic/PriceCap1200/" *
+    "output/Strategic/PriceCap/" *
     "$Year" *
-    "/UC" *
-    "$UCHorizon" *
-    "ED" *
+    "_ED" *
     "$EDHorizon" *
     "_Strategic_" *
     "$strategic" *
@@ -91,10 +89,6 @@ output_folder =
     "$NLCAdjustment" *
     "_Error" *
     "$ErrorAdjustment" *
-    "_ESPeakBidAdjustment" *
-    "$ESPeakBidAdjustment" *
-    "_ESPeakBid" *
-    "$ESPeakBid" *
     "NegativeRenew" *
     "_" *
     "$GSMCSeg"
@@ -110,7 +104,7 @@ mkpath(output_folder)
 #     "/Region1/4hrmodel1_5Seg.jld2",
 # ]
 model_base_folder =
-    "models/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
+    "models/PriceCap/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
 
 # Update strategic storage scale base on set ratio
 storagebidmodels = []
