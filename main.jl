@@ -30,14 +30,14 @@ function quadratic_function(x)
 end
 
 # Generate the array of x values
-# x_values = 0:100:4900
+x_values = 0:100:4900
 
-# # Compute the quadratic function for each x value and store the results in an array
-# y_values = [quadratic_function(x) for x in x_values]
-# PriceCap = repeat(
-#     repeat(y_values', outer = (size(params.UCL, 2), 1)),
-#     outer = (1, 1, EDHorizon),
-# )
+# Compute the quadratic function for each x value and store the results in an array
+y_values = [quadratic_function(x) for x in x_values]
+PriceCap = repeat(
+    repeat(y_values', outer = (size(params.UCL, 2), 1)),
+    outer = (1, 1, EDHorizon),
+)
 # PriceCap = repeat(
 #     repeat(
 #         (range(220, stop = 1000, length = 40))',
@@ -45,10 +45,10 @@ end
 #     ),
 #     outer = (1, 1, EDHorizon),
 # )
-PriceCap = repeat(
-    repeat(fill(1200.0, 50)', outer = (size(params.UCL, 2), 1)),
-    outer = (1, 1, EDHorizon),
-)
+# PriceCap = repeat(
+#     repeat(fill(1200.0, 50)', outer = (size(params.UCL, 2), 1)),
+#     outer = (1, 1, EDHorizon),
+# )
 FuelAdjustment = 2.0
 NLCAdjustment = 1.2
 ErrorAdjustment = 0.25
@@ -69,9 +69,9 @@ elseif Year == 2050
 end
 
 output_folder =
-    "output/Strategic/PriceCap/" *
+    "output/Strategic/Exp/" *
     "$Year" *
-    "_ED" *
+    "/ED" *
     "$EDHorizon" *
     "_Strategic_" *
     "$strategic" *
@@ -83,13 +83,6 @@ output_folder =
     "$ESSeg" *
     "_BAW" *
     "$BAWindow" *
-    "_Fuel" *
-    "$FuelAdjustment" *
-    "_NLC" *
-    "$NLCAdjustment" *
-    "_Error" *
-    "$ErrorAdjustment" *
-    "NegativeRenew" *
     "_" *
     "$GSMCSeg"
 mkpath(output_folder)
