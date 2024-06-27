@@ -237,6 +237,7 @@ function setEDConstraints(
     RTCBids,
     ESPeakBid,
     ESPeakBidAdjustment,
+    BSESCbidAdjustment,
     AdjustedEDL,
     AdjustedEDSolar,
     AdjustedEDWind,
@@ -332,6 +333,10 @@ function setEDConstraints(
                         cb[i, :] =
                             -vrt[i, :, (h-1)*EDSteps+t] .* params.Eeta[i] /
                             EDSteps
+                        cb[i, :] = map(
+                            x -> x < 0.0 ? x * BSESCbidAdjustment : x,
+                            cb[i, :],
+                        )
                         if tp == 1
                             cbdf = DataFrame(12 * cb[i, :]', :auto)
                             dbdf = DataFrame(12 * db[i, :]', :auto)
@@ -742,6 +747,7 @@ function solving(
     ErrorAdjustment::Float64 = 1.0,
     LoadAdjustment::Float64 = 1.0,
     ESPeakBidAdjustment::Float64 = 1.0,
+    BSESCbidAdjustment::Float64 = 1.0,
     ESPeakBid::Float64 = 100.0,
     seed::Int = 0,
 )
@@ -1073,6 +1079,7 @@ function solving(
                         RTCBids,
                         ESPeakBid,
                         ESPeakBidAdjustment,
+                        BSESCbidAdjustment,
                         AdjustedEDL,
                         AdjustedEDSolar,
                         AdjustedEDWind,

@@ -57,6 +57,7 @@ SegmentAdjustment = [1.0, 2.0, 2.0, 2.0, 2.0]
 params.GSMC = params.GSMC .* SegmentAdjustment'
 ESPeakBidAdjustment = 1.0
 ESPeakBid = 100.0
+BSESCbidAdjustment = 0.5
 GSMCSeg = join(SegmentAdjustment, "-")
 if Year == 2022
     ESAdjustment = 1.0
@@ -69,7 +70,7 @@ elseif Year == 2050
 end
 
 output_folder =
-    "output/Strategic/Exp/" *
+    "output/Strategic/Quad/" *
     "$Year" *
     "/ED" *
     "$EDHorizon" *
@@ -83,8 +84,8 @@ output_folder =
     "$ESSeg" *
     "_BAW" *
     "$BAWindow" *
-    "_" *
-    "$GSMCSeg"
+    "_BSESCbid" *
+    "$BSESCbidAdjustment"
 mkpath(output_folder)
 
 # model_filenames = [
@@ -97,7 +98,7 @@ mkpath(output_folder)
 #     "/Region1/4hrmodel1_5Seg.jld2",
 # ]
 model_base_folder =
-    "models/PriceCap/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
+    "models/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
 
 # Update strategic storage scale base on set ratio
 storagebidmodels = []
@@ -232,6 +233,7 @@ timesolve = @elapsed begin
         LoadAdjustment = LoadAdjustment,
         ESPeakBidAdjustment = ESPeakBidAdjustment,
         ESPeakBid = ESPeakBid,
+        BSESCbidAdjustment = BSESCbidAdjustment,
         seed = seed,
     )
 end
