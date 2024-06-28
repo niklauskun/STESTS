@@ -8,7 +8,7 @@ RealTimeNoise = true
 Year = 2022
 # CurrentMix = true
 TransmissionCap = true
-DataName = "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2"
+DataName = "./data/ADS2032_20GWBES_BS_AggES_" * "$Year" * "_fixed.jld2"
 folder = "2032 ADS PCM V2.4.1 Public Data/Processed Data/" * "$Year"
 
 @info "Reading data from $folder..."
@@ -172,7 +172,7 @@ timereaddata = @elapsed begin
         CSV.read(joinpath(folder, "StorageMap_C_Agg.csv"), DataFrame)[:, 2:end],
     )
     storagedata = CSV.read(
-        joinpath(folder, "Storage_C_4hr_5GW_Strategic_Agg.csv"),
+        joinpath(folder, "Storage_C_4hr_20GW_Strategic_Agg.csv"),
         DataFrame,
     )
     ESDABids =
