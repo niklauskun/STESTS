@@ -395,7 +395,7 @@ function setEDConstraints(
                     )
                     if params.EStrategic[i] == 2
                         cb[i, :] .= cb[i, :] .- 0.01
-                        db[i, :] .= db[i, :] .+ 0.01
+                        db[i, :] .= db[i, :] .- 0.01
                     end
                 end
                 if tp == 1
