@@ -24,3 +24,4 @@ output/archive-noendsoc/1MO_R_RM0.03VOLL9000/.DS_Store
 *.png
 test.jl
 *.csv
+*.DS_Store

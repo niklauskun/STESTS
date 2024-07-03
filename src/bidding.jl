@@ -120,7 +120,8 @@ function assign_models_to_storages(
     end
 
     for storage_id in 1:num_storages
-        if params.EStrategic[storage_id] == 1
+        if params.EStrategic[storage_id] == 1 ||
+           params.EStrategic[storage_id] == 2
             region_idx =
                 findfirst(x -> x == 1, params.storagemap[storage_id, 1:6])
             if region_idx !== nothing
@@ -141,11 +142,17 @@ function assign_models_to_storages(
                         unused_model_indices[region_key][random_index]
                     deleteat!(unused_model_indices[region_key], random_index)
                 else
-                    # Sequential model selection logic
-                    last_model_index_used[region_key] =
-                        get(last_model_index_used, region_key, 0) + 1
-                    selected_model_index =
-                        (last_model_index_used[region_key] - 1) % num_models + 1
+                    if params.EStrategic[storage_id] == 1
+                        # Sequential model selection logic
+                        last_model_index_used[region_key] =
+                            get(last_model_index_used, region_key, 0) + 1
+                        selected_model_index =
+                            (last_model_index_used[region_key] - 1) %
+                            num_models + 1
+                    else
+                        # Control energy storage model selection logic
+                        selected_model_index = 1
+                    end
                 end
 
                 selected_model_key = model_keys[selected_model_index]
@@ -191,6 +198,7 @@ end
 
 function update_battery_storage!(
     params::STESTS.ModelParams,
+    ControlES::Bool,
     ratio::Float64,
     output_folder::String,
     heto::Bool,
@@ -291,6 +299,14 @@ function update_battery_storage!(
         )
         CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
     end
+
+    new_Eeta = []
+    new_EPC = []
+    new_EPD = []
+    new_ESOC = []
+    new_ESOCini = []
+    new_EStrategic = []
+
     if ratio == 1.0
         println("All AI-Powered BES.")
         for i in eachindex(params.Eeta)
@@ -315,12 +331,6 @@ function update_battery_storage!(
         println("ISR AI-Powered BES.")
         # Assume additional fields in Params for simplicity of explanation
         new_storagemap = copy(params.storagemap)
-        new_Eeta = []
-        new_EPC = []
-        new_EPD = []
-        new_ESOC = []
-        new_ESOCini = []
-        new_EStrategic = []
 
         # Track indices to remove
         remove_indices = []
@@ -370,18 +380,6 @@ function update_battery_storage!(
             append!(remove_indices, battery_indices)
         end
 
-        # Save the new entries to csv
-        df = DataFrame(
-            Eeta = new_Eeta,
-            EPC = new_EPC,
-            EPD = new_EPD,
-            ESOC = new_ESOC,
-            ESOCini = new_ESOCini,
-            EStrategic = new_EStrategic,  # Assuming you also have this array
-        )
-
-        CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
-
         # Now, remove the aggregated entries and update params
         # Append new entries
         params.Eeta = vcat(params.Eeta, new_Eeta)
@@ -403,6 +401,46 @@ function update_battery_storage!(
         params.EStrategic = params.EStrategic[mask]
         params.storagemap = new_storagemap[mask, :]
     end
+
+    #Hard Code Here!
+    if ControlES
+        Control_Eeta = 0.9
+        Control_EPC = 1.0
+        Control_EPD = 1.0
+        Control_ESOC = 4.0
+        Control_ESOCini = 2.0
+        Control_EStrategic = 2
+        Control_Storagemap = [0, 1, 0, 0, 0, 0]'
+
+        # Append control storage parameters to the existing arrays in `params`
+        push!(params.Eeta, Control_Eeta)
+        push!(params.EPC, Control_EPC)
+        push!(params.EPD, Control_EPD)
+        push!(params.ESOC, Control_ESOC)
+        push!(params.ESOCini, Control_ESOCini)
+        push!(params.EStrategic, Control_EStrategic)
+        params.storagemap = vcat(params.storagemap, Control_Storagemap)
+
+        append!(new_Eeta, Control_Eeta)
+        append!(new_EPC, Control_EPC)
+        append!(new_EPD, Control_EPD)
+        append!(new_ESOC, Control_ESOC)
+        append!(new_ESOCini, Control_ESOCini)
+        append!(new_EStrategic, Control_EStrategic)
+    end
+
+    # Save the new entries to csv
+    df = DataFrame(
+        Eeta = new_Eeta,
+        EPC = new_EPC,
+        EPD = new_EPD,
+        ESOC = new_ESOC,
+        ESOCini = new_ESOCini,
+        EStrategic = new_EStrategic,  # Assuming you also have this array
+    )
+
+    CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
+
     return params
 end
 

@@ -225,7 +225,7 @@ function setEDConstraints(
     EDGPIni,
     EDSteps,
     BAWindow,
-    strategic,
+    StrategicES,
     FORB,
     bidmodels,
     db,
@@ -314,7 +314,7 @@ function setEDConstraints(
             end
         end
         # update energy storage bids
-        if strategic
+        if StrategicES
             # update bids for AI-Enchanced and Baseline energy storage
             # update bids for baseline energy storage using OCB
             for i in axes(RTDBids, 1)
@@ -393,6 +393,10 @@ function setEDConstraints(
                         x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
                         db[i, :],
                     )
+                    if params.EStrategic[i] == 2
+                        cb[i, :] .= cb[i, :] .- 0.01
+                        db[i, :] .= db[i, :] .+ 0.01
+                    end
                 end
                 if tp == 1
                     cbdf = DataFrame(12 * cb[i, :]', :auto)
@@ -722,7 +726,7 @@ end
 function solving(
     params::STESTS.ModelParams,
     Nday::Int,
-    strategic::Bool,
+    StrategicES::Bool,
     FORB::Bool,
     DADBids::Matrix{Float64},
     DACBids::Matrix{Float64},
@@ -841,7 +845,7 @@ function solving(
             DAOInput = ones(Int, size(params.GPIni, 1), UCHorizon)
         end
 
-        if d == 1 || !strategic
+        if d == 1 || !StrategicES
             DAdb = convert(
                 Matrix{Float64},
                 DADBids[:, 24*(d-1)+1:24*d+UCHorizon-24],
@@ -1067,7 +1071,7 @@ function solving(
                         EDGPIni,
                         EDSteps,
                         BAWindow,
-                        strategic,
+                        StrategicES,
                         FORB,
                         bidmodels,
                         db,

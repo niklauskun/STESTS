@@ -5,16 +5,17 @@ Year = 2022
 params = STESTS.read_jld2(
     "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
 )
-strategic = true
+StrategicES = true
+ControlES = true
 FORB = true
 seed = 123
 heto = false
 RandomModel = false
 RandomSeed = 1
-ratio = 1.0
+ratio = 0.5
 RM = 0.03
 VOLL = 9000.0
-NDay = 364
+NDay = 2
 UCHorizon = Int(25) # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
 EDHorizon = Int(1) # optimization horizon for economic dispatch model, 1 without look-ahead, 12 with 1-hour look-ahead
 EDSteps = Int(12) # number of 5-min intervals in a hour
@@ -70,12 +71,12 @@ elseif Year == 2050
 end
 
 output_folder =
-    "output/Strategic/Quad/" *
+    "output/Strategic/Test/" *
     "$Year" *
     "/ED" *
     "$EDHorizon" *
     "_Strategic_" *
-    "$strategic" *
+    "$StrategicES" *
     "_FORB_" *
     "$FORB" *
     "_ratio" *
@@ -98,39 +99,39 @@ mkpath(output_folder)
 #     "/Region1/4hrmodel1_5Seg.jld2",
 # ]
 model_base_folder =
-    "models/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
+    "models/5GW/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
 
 # Update strategic storage scale base on set ratio
 storagebidmodels = []
-if strategic
+if StrategicES
     mkpath(output_folder * "/Strategic")
     mkpath(output_folder * "/NStrategic")
-    if ratio == 1.0
-        for i in eachindex(params.Eeta)
-            if params.Eeta[i] == 0.8
-                params.EStrategic[i] = 0
-            elseif params.Eeta[i] == 0.9
-                params.EStrategic[i] = 1
-            else
-                # Handle unexpected case, if necessary
-                println(
-                    "Unexpected value in params.Eeta at index $i: ",
-                    params.Eeta[i],
-                )
-            end
-        end
-    elseif ratio == 0.0
-        println("No AI-Powered BES.")
-    else
-        STESTS.update_battery_storage!(
-            params,
-            ratio,
-            output_folder,
-            heto,
-            ESAdjustment,
-        )
-    end
-    # bidmodels = STESTS.loadbidmodels(model_filenames)
+    # if ratio == 1.0
+    #     for i in eachindex(params.Eeta)
+    #         if params.Eeta[i] == 0.8
+    #             params.EStrategic[i] = 0
+    #         elseif params.Eeta[i] == 0.9
+    #             params.EStrategic[i] = 1
+    #         else
+    #             # Handle unexpected case, if necessary
+    #             println(
+    #                 "Unexpected value in params.Eeta at index $i: ",
+    #                 params.Eeta[i],
+    #             )
+    #         end
+    #     end
+    # elseif ratio == 0.0
+    #     println("No AI-Powered BES.")
+    # else
+    STESTS.update_battery_storage!(
+        params,
+        ControlES,
+        ratio,
+        output_folder,
+        heto,
+        ESAdjustment,
+    )
+    # end
     bidmodels = STESTS.loadbidmodels(model_base_folder)
     storagebidmodels = STESTS.assign_models_to_storages(
         params,
@@ -207,7 +208,7 @@ timesolve = @elapsed begin
     UCcost, EDcost = STESTS.solving(
         params,
         NDay,
-        strategic,
+        StrategicES,
         FORB,
         DADBids,
         DACBids,
