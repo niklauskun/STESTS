@@ -106,23 +106,7 @@ storagebidmodels = []
 if StrategicES
     mkpath(output_folder * "/Strategic")
     mkpath(output_folder * "/NStrategic")
-    # if ratio == 1.0
-    #     for i in eachindex(params.Eeta)
-    #         if params.Eeta[i] == 0.8
-    #             params.EStrategic[i] = 0
-    #         elseif params.Eeta[i] == 0.9
-    #             params.EStrategic[i] = 1
-    #         else
-    #             # Handle unexpected case, if necessary
-    #             println(
-    #                 "Unexpected value in params.Eeta at index $i: ",
-    #                 params.Eeta[i],
-    #             )
-    #         end
-    #     end
-    # elseif ratio == 0.0
-    #     println("No AI-Powered BES.")
-    # else
+
     STESTS.update_battery_storage!(
         params,
         ControlES,
@@ -131,7 +115,7 @@ if StrategicES
         heto,
         ESAdjustment,
     )
-    # end
+
     bidmodels = STESTS.loadbidmodels(model_base_folder)
     storagebidmodels = STESTS.assign_models_to_storages(
         params,
