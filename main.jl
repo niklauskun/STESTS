@@ -6,16 +6,18 @@ params = STESTS.read_jld2(
     "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
 )
 StrategicES = true
-ControlES = true
+ControlES = false
+LDESRatio = [0.9, 0.1]
+LDESDur = [4, 12]
 FORB = true
 seed = 123
 heto = false
 RandomModel = false
 RandomSeed = 1
-ratio = 0.5
+ratio = 1.0
 RM = 0.03
 VOLL = 9000.0
-NDay = 2
+NDay = 364
 UCHorizon = Int(25) # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
 EDHorizon = Int(1) # optimization horizon for economic dispatch model, 1 without look-ahead, 12 with 1-hour look-ahead
 EDSteps = Int(12) # number of 5-min intervals in a hour
@@ -72,8 +74,7 @@ end
 
 output_folder =
     "output/Strategic/Test/" *
-    "$Year" *
-    "/ED" *
+    "ED" *
     "$EDHorizon" *
     "_Strategic_" *
     "$StrategicES" *
@@ -99,7 +100,7 @@ mkpath(output_folder)
 #     "/Region1/4hrmodel1_5Seg.jld2",
 # ]
 model_base_folder =
-    "models/5GW/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
+    "models/5GWLDES/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
 
 # Update strategic storage scale base on set ratio
 storagebidmodels = []
@@ -114,6 +115,13 @@ if StrategicES
         output_folder,
         heto,
         ESAdjustment,
+    )
+
+    STESTS.update_long_duration_storage!(
+        params,
+        LDESRatio,
+        LDESDur,
+        output_folder,
     )
 
     bidmodels = STESTS.loadbidmodels(model_base_folder)

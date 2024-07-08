@@ -126,8 +126,22 @@ function assign_models_to_storages(
                 findfirst(x -> x == 1, params.storagemap[storage_id, 1:6])
             if region_idx !== nothing
                 region_key = "Region$(region_idx)"
-                model_keys = collect(keys(models[region_key]))
+
+                # Determine the duration of the storage and select the appropriate model set
+                duration = params.ESOC[storage_id] / params.EPC[storage_id]
+                model_prefix = "$(Int(round(duration)))hrmodel"  # Generalize model prefix based on duration
+
+                model_keys = filter(
+                    key -> startswith(key, model_prefix),
+                    collect(keys(models[region_key])),
+                )
                 num_models = length(model_keys)
+                if num_models == 0
+                    error(
+                        "No models found for duration $(Int(round(duration))) hours in region $(region_idx)",
+                    )
+                end
+
                 if RandomModel
                     # Initialize or replenish the unused_model_indices for the region
                     if !haskey(unused_model_indices, region_key) ||
@@ -156,19 +170,6 @@ function assign_models_to_storages(
                 end
 
                 selected_model_key = model_keys[selected_model_index]
-                # if RandomModel
-                #     # Shuffle the model_keys if RandomModel is true
-                #     shuffled_model_keys = shuffle(model_keys)
-                #     selected_model_key = shuffled_model_keys[1] # Select the first model from the shuffled array
-                # else
-                #     # Initialize or increment the model index for this region
-                #     last_model_index_used[region_key] =
-                #         get(last_model_index_used, region_key, 0) + 1
-                #     # Ensure the model index loops back to the start if it exceeds the number of models available
-                #     selected_model_index =
-                #         (last_model_index_used[region_key] - 1) % num_models + 1
-                #     selected_model_key = model_keys[selected_model_index]
-                # end
 
                 push!(
                     storage_to_model_map,
@@ -176,8 +177,13 @@ function assign_models_to_storages(
                 )
                 push!(
                     storage_to_index_map,
-                    (storage_id, selected_model_index, region_idx),
-                )  # Include region info
+                    (
+                        storage_id,
+                        selected_model_index,
+                        region_idx,
+                        selected_model_key,
+                    ),
+                )
             end
         end
     end
@@ -187,6 +193,7 @@ function assign_models_to_storages(
         StorageID = first.(storage_to_index_map),
         SelectedModelIndex = getindex.(storage_to_index_map, 2),
         Region = getindex.(storage_to_index_map, 3),
+        ModelName = getindex.(storage_to_index_map, 4),
     )
     CSV.write(
         joinpath(output_folder * "/Strategic", "storage_to_index_map.csv"),
@@ -489,6 +496,88 @@ function CalcValueNoUnc(d, c, eta, vi, iC, iD)
     # output new value function sampled at ed
     vo = Term1 + Term2 + Term3 + Term4 + Term5 + Term6
     return vo
+end
+
+function update_long_duration_storage!(
+    params::STESTS.ModelParams,
+    LDESRatio::Vector{Float64},
+    LDESDur::Vector{Int},
+    output_folder::String,
+)
+    new_Eeta = Float64[]
+    new_EPC = Float64[]
+    new_EPD = Float64[]
+    new_ESOC = Float64[]
+    new_ESOCini = Float64[]
+    new_EStrategic = Int64[]
+    new_storagemap = copy(params.storagemap)
+    remove_indices = Int[]
+
+    for i in eachindex(params.Eeta)
+        if params.Eeta[i] == 0.9
+            original_EPC = params.EPC[i]
+            original_EPD = params.EPD[i]
+            original_ESOC = params.ESOC[i]
+            original_ESOCini = params.ESOCini[i]
+            original_Eta = params.Eeta[i]
+            original_strategic = params.EStrategic[i]
+            original_storagemap = params.storagemap[i, :]
+
+            for j in 1:length(LDESRatio)
+                ratio = LDESRatio[j]
+                duration = LDESDur[j]
+                new_EPC_val = original_EPC * ratio
+                new_EPD_val = original_EPD * ratio
+                new_ESOC_val = duration * new_EPC_val
+                new_ESOCini_val = 0.5 * new_ESOC_val
+
+                append!(new_Eeta, original_Eta)
+                append!(new_EPC, new_EPC_val)
+                append!(new_EPD, new_EPD_val)
+                append!(new_ESOC, new_ESOC_val)
+                append!(new_ESOCini, new_ESOCini_val)
+                append!(new_EStrategic, original_strategic)
+
+                new_storagemap =
+                    vcat(new_storagemap, reshape(original_storagemap, 1, :))
+            end
+
+            append!(remove_indices, i)
+        end
+    end
+
+    params.Eeta = vcat(params.Eeta, new_Eeta)
+    params.EPC = vcat(params.EPC, new_EPC)
+    params.EPD = vcat(params.EPD, new_EPD)
+    params.ESOC = vcat(params.ESOC, new_ESOC)
+    params.ESOCini = vcat(params.ESOCini, new_ESOCini)
+    params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+    params.storagemap = new_storagemap
+
+    # Remove original entries that were split
+    remove_indices = sort(unique(remove_indices))
+    mask = trues(length(params.Eeta))
+    mask[remove_indices] .= false
+    params.Eeta = params.Eeta[mask]
+    params.EPC = params.EPC[mask]
+    params.EPD = params.EPD[mask]
+    params.ESOC = params.ESOC[mask]
+    params.ESOCini = params.ESOCini[mask]
+    params.EStrategic = params.EStrategic[mask]
+    params.storagemap = params.storagemap[mask, :]
+
+    # Save the new entries to CSV
+    df = DataFrame(
+        Eeta = params.Eeta,
+        EPC = params.EPC,
+        EPD = params.EPD,
+        ESOC = params.ESOC,
+        ESOCini = params.ESOCini,
+        EStrategic = params.EStrategic,
+    )
+
+    CSV.write(joinpath(output_folder * "/Strategic", "UPDATED_LDES.csv"), df)
+    return params
 end
 
 function generate_value_function(
