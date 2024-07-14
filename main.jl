@@ -3,21 +3,22 @@ using STESTS, JuMP, Gurobi, CSV, DataFrames, Statistics, SMTPClient
 Year = 2022
 # Read data from .jld2 file 
 params = STESTS.read_jld2(
-    "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
+    "./data/ADS2032_10GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
 )
 StrategicES = true
 ControlES = false
-LDESRatio = [0.9, 0.1]
-LDESDur = [4, 12]
+LDESRatio = [1.0, 0.0, 0.0, 1.64] # Ratios of long duration storage capacity to current BESS capacity
+LDESDur = [4, 10, 24, 100]
+LDESEta = [0.90, 0.75, 0.75, 0.75] # Do not set at 0.80 which is PHS efficiency
 FORB = true
 seed = 123
 heto = false
 RandomModel = false
 RandomSeed = 1
-ratio = 1.0
+ratio = 0.5
 RM = 0.03
 VOLL = 9000.0
-NDay = 364
+NDay = 2
 UCHorizon = Int(25) # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
 EDHorizon = Int(1) # optimization horizon for economic dispatch model, 1 without look-ahead, 12 with 1-hour look-ahead
 EDSteps = Int(12) # number of 5-min intervals in a hour
@@ -32,15 +33,21 @@ function quadratic_function(x)
     return min(a * x^2 + b * x + c, 2000)
 end
 
-# Generate the array of x values
-x_values = 0:100:4900
+# function quadratic_function(x)
+#     a = 5
+#     b = 300
+#     return min(a * x + b, 9000)
+# end
 
-# Compute the quadratic function for each x value and store the results in an array
-y_values = [quadratic_function(x) for x in x_values]
-PriceCap = repeat(
-    repeat(y_values', outer = (size(params.UCL, 2), 1)),
-    outer = (1, 1, EDHorizon),
-)
+# Generate the array of x values
+# x_values = 0:100:4900
+
+# # Compute the quadratic function for each x value and store the results in an array
+# y_values = [quadratic_function(x) for x in x_values]
+# PriceCap = repeat(
+#     repeat(y_values', outer = (size(params.UCL, 2), 1)),
+#     outer = (1, 1, EDHorizon),
+# )
 # PriceCap = repeat(
 #     repeat(
 #         (range(220, stop = 1000, length = 40))',
@@ -48,10 +55,10 @@ PriceCap = repeat(
 #     ),
 #     outer = (1, 1, EDHorizon),
 # )
-# PriceCap = repeat(
-#     repeat(fill(1200.0, 50)', outer = (size(params.UCL, 2), 1)),
-#     outer = (1, 1, EDHorizon),
-# )
+PriceCap = repeat(
+    repeat(fill(9000.0, 50)', outer = (size(params.UCL, 2), 1)),
+    outer = (1, 1, EDHorizon),
+)
 FuelAdjustment = 2.0
 NLCAdjustment = 1.2
 ErrorAdjustment = 0.25
@@ -72,6 +79,10 @@ elseif Year == 2050
     ESAdjustment = 1.3
 end
 
+LDESRatio_str = join(LDESRatio, "-")
+LDESDur_str = join(LDESDur, "-")
+LDESEta_str = join(LDESEta, "-")
+
 output_folder =
     "output/Strategic/Test/" *
     "ED" *
@@ -87,8 +98,13 @@ output_folder =
     "_BAW" *
     "$BAWindow" *
     "_BSESCbid" *
-    "$BSESCbidAdjustment"
-mkpath(output_folder)
+    "$BSESCbidAdjustment" *
+    "_LDESRatio_" *
+    "$LDESRatio_str" *
+    "_LDESDur_" *
+    "$LDESDur_str" *
+    "_LDESEta_" *
+    "$LDESEta_str"
 
 # model_filenames = [
 #     "models/BAW" *
@@ -99,14 +115,21 @@ mkpath(output_folder)
 #     "$ESMC" *
 #     "/Region1/4hrmodel1_5Seg.jld2",
 # ]
-model_base_folder =
-    "models/5GWLDES/BAW" * "$BAWindow" * "EDH" * "$EDHorizon" * "MC" * "$ESMC"
+model_base_folder = "models/10GWLDES/BAW" * "$BAWindow" * "EDH" * "$EDHorizon"
 
 # Update strategic storage scale base on set ratio
 storagebidmodels = []
 if StrategicES
     mkpath(output_folder * "/Strategic")
     mkpath(output_folder * "/NStrategic")
+
+    STESTS.add_long_duration_storage!(
+        params,
+        LDESRatio,
+        LDESDur,
+        LDESEta,
+        output_folder,
+    )
 
     STESTS.update_battery_storage!(
         params,
@@ -115,14 +138,15 @@ if StrategicES
         output_folder,
         heto,
         ESAdjustment,
+        LDESEta,
     )
 
-    STESTS.update_long_duration_storage!(
-        params,
-        LDESRatio,
-        LDESDur,
-        output_folder,
-    )
+    # STESTS.update_long_duration_storage!(
+    #     params,
+    #     LDESRatio,
+    #     LDESDur,
+    #     output_folder,
+    # )
 
     bidmodels = STESTS.loadbidmodels(model_base_folder)
     storagebidmodels = STESTS.assign_models_to_storages(
@@ -143,6 +167,7 @@ RTCBids = repeat(params.ESRTBids[:, 2]', size(params.storagemap, 1), 1)
 # Formulate unit commitment model
 ucmodel = STESTS.unitcommitment(
     params,
+    StrategicES = StrategicES,
     Horizon = UCHorizon, # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
     VOLL = VOLL, # value of lost load, $/MWh
     RM = RM, # reserve margin
@@ -161,6 +186,7 @@ set_optimizer_attribute(ucmodel, "OutputFlag", 0)
 
 ucpmodel = STESTS.unitcommitmentprice(
     params,
+    StrategicES = StrategicES,
     Horizon = UCHorizon, # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
     VOLL = VOLL, # value of lost load, $/MWh
     RM = RM, # reserve margin
@@ -212,6 +238,7 @@ timesolve = @elapsed begin
         output_folder,
         PriceCap,
         bidmodels = storagebidmodels,
+        LDESEta = LDESEta,
         ESSeg = ESSeg,
         ESMC = ESMC,
         UCHorizon = UCHorizon,

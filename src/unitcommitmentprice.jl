@@ -12,6 +12,7 @@ unitcommitment(L::Vector{Float64})::JuMP.Model -> Single-bus ucmodel
 """
 function unitcommitmentprice(
     params::STESTS.ModelParams;
+    StrategicES::Bool = false, # strategic energy storage
     Horizon::Int = 24, # planning horizon
     VOLL::Float64 = 1000.0, # value of lost load
     RM::Float64 = 0.03, # reserve margin
@@ -180,11 +181,14 @@ function unitcommitmentprice(
         e[i, h-1] + c[i, h] * params.Eeta[i] - d[i, h] / params.Eeta[i]
     )
 
-    @constraint(
-        ucpmodel,
-        StorageSOCEnd[i = 1:nstorage, h = 1:ntimepoints; h % 24 == 0],  # Apply constraint for every h divisible by 24
-        e[i, h] >= params.ESOCini[i]
-    )
+    # Storage SOC end constraints if using dummy bids
+    if !StrategicES
+        @constraint(
+            ucpmodel,
+            StorageSOCEnd[i = 1:nstorage, h = 1:ntimepoints; h % 24 == 0],  # Apply constraint for every h divisible by 24
+            e[i, h] >= params.ESOCini[i]
+        )
+    end
 
     # Conventional generator must run constraints
     # @constraint(

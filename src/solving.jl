@@ -232,6 +232,7 @@ function setEDConstraints(
     cb,
     vrt,
     segment_length,
+    LDESEta,
     ESSeg,
     RTDBids,
     RTCBids,
@@ -319,12 +320,20 @@ function setEDConstraints(
             # update bids for baseline energy storage using OCB
             for i in axes(RTDBids, 1)
                 if params.EStrategic[i] == 0
-                    if params.Eeta[i] == 0.9
-                        db[i, :] =
-                            (
-                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
-                                ESMC
-                            ) / EDSteps
+                    if params.Eeta[i] == 0.9 || params.Eeta[i] in LDESEta
+                        if params.Eeta[i] == 0.9
+                            db[i, :] =
+                                (
+                                    vrt[i, :, (h-1)*EDSteps+t] ./
+                                    params.Eeta[i] .+ ESMC
+                                ) / EDSteps
+                        elseif params.Eeta[i] in LDESEta
+                            db[i, :] =
+                                (
+                                    vrt[i, :, (h-1)*EDSteps+t] ./
+                                    params.Eeta[i] .+ 10.0
+                                ) / EDSteps
+                        end
                         db[i, :] = map(
                             x ->
                                 x > ESPeakBid ? x * ESPeakBidAdjustment : x,
@@ -366,9 +375,19 @@ function setEDConstraints(
             # update bids for AI-Enhaned energy storage using OCB + AI
             for (i, model) in bidmodels
                 if d == 1
-                    db[i, :] =
-                        (vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+ ESMC) /
-                        EDSteps
+                    if params.Eeta == 0.9
+                        db[i, :] =
+                            (
+                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
+                                ESMC
+                            ) / EDSteps
+                    elseif params.Eeta[i] in LDESEta
+                        db[i, :] =
+                            (
+                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
+                                10.0
+                            ) / EDSteps
+                    end
                     db[i, :] = map(
                         x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
                         db[i, :],
@@ -388,7 +407,11 @@ function setEDConstraints(
                     ]
                     enforce_strictly_decreasing_vector(vavg)
                     cb[i, :] .= -vavg .* 0.9 ./ EDSteps
-                    db[i, :] .= (vavg ./ 0.9 .+ ESMC) ./ EDSteps
+                    if params.Eeta[i] == 0.9
+                        db[i, :] .= (vavg ./ 0.9 .+ ESMC) ./ EDSteps
+                    elseif params.Eeta[i] in LDESEta
+                        db[i, :] .= (vavg ./ params.Eeta[i] .+ 10.0) ./ EDSteps
+                    end
                     db[i, :] = map(
                         x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
                         db[i, :],
@@ -738,6 +761,7 @@ function solving(
     output_folder::String,
     PriceCap::Array{Float64};
     bidmodels::Vector{Any} = [],
+    LDESEta::Array{Float64} = [0.90],
     ESSeg::Int = 1,
     ESMC::Float64 = 10.0,
     UCHorizon::Int = 24,
@@ -868,9 +892,21 @@ function solving(
                         params.EPD[i] / params.ESOC[i],
                         params.Eeta[i],
                         1,
-                        EDprice24 * params.storagemap[i, :],
+                        EDprice24 * params.storagemap[i, :];
+                        c = ESMC,
                     )
                     DAdb[i, :] = vda[i, :] / params.Eeta[i] .+ ESMC
+                    DAcb[i, :] = -vda[i, :] .* params.Eeta[i]
+                elseif params.Eeta[i] in LDESEta
+                    vda[i, :] = generate_value_function(
+                        24,
+                        params.EPD[i] / params.ESOC[i],
+                        params.Eeta[i],
+                        1,
+                        EDprice24 * params.storagemap[i, :];
+                        c = 10.0,
+                    )
+                    DAdb[i, :] = vda[i, :] / params.Eeta[i] .+ 10.0
                     DAcb[i, :] = -vda[i, :] .* params.Eeta[i]
                 else
                     DAdb[i, :] = convert(
@@ -1036,7 +1072,17 @@ function solving(
                         params.EPD[i] / params.ESOC[i] / EDSteps,
                         params.Eeta[i],
                         ESSeg,
-                        UCprice288 * params.storagemap[i, :],
+                        UCprice288 * params.storagemap[i, :];
+                        c = ESMC,
+                    )
+                elseif params.Eeta[i] in LDESEta
+                    vrt[i, :, :] = generate_value_function(
+                        288,
+                        params.EPD[i] / params.ESOC[i] / EDSteps,
+                        params.Eeta[i],
+                        ESSeg,
+                        UCprice288 * params.storagemap[i, :];
+                        c = 10.0,
                     )
                 end
             end
@@ -1078,6 +1124,7 @@ function solving(
                         cb,
                         vrt,
                         segment_length,
+                        LDESEta,
                         ESSeg,
                         RTDBids,
                         RTCBids,
