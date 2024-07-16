@@ -1,9 +1,10 @@
 using STESTS, JuMP, Gurobi, CSV, DataFrames, Statistics, SMTPClient
 
 Year = 2022
+Cap = 10
 # Read data from .jld2 file 
 params = STESTS.read_jld2(
-    "./data/ADS2032_5GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
+    "./data/ADS2032_" * "$Cap" * "GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
 )
 StrategicES = false
 ControlES = false
@@ -33,21 +34,21 @@ BAWindow = Int(0) # bid-ahead window (number of 5-min intervals, 12-1hr, 48-4hr)
 #     return min(a * x^2 + b * x + c, 2000)
 # end
 
-function quadratic_function(x)
-    a = 5.0
-    b = 300.0
-    return min(a * x + b, 9000.0)
-end
+# function quadratic_function(x)
+#     a = 5.0
+#     b = 300.0
+#     return min(a * x + b, 9000.0)
+# end
 
-# Generate the array of x values
-x_values = 0:100:4900
+# # Generate the array of x values
+# x_values = 0:100:4900
 
-# Compute the quadratic function for each x value and store the results in an array
-y_values = [quadratic_function(x) for x in x_values]
-PriceCap = repeat(
-    repeat(y_values', outer = (size(params.UCL, 2), 1)),
-    outer = (1, 1, EDHorizon),
-)
+# # Compute the quadratic function for each x value and store the results in an array
+# y_values = [quadratic_function(x) for x in x_values]
+# PriceCap = repeat(
+#     repeat(y_values', outer = (size(params.UCL, 2), 1)),
+#     outer = (1, 1, EDHorizon),
+# )
 # PriceCap = repeat(
 #     repeat(
 #         (range(220, stop = 1000, length = 40))',
@@ -55,10 +56,10 @@ PriceCap = repeat(
 #     ),
 #     outer = (1, 1, EDHorizon),
 # )
-# PriceCap = repeat(
-#     repeat(fill(9000.0, 50)', outer = (size(params.UCL, 2), 1)),
-#     outer = (1, 1, EDHorizon),
-# )
+PriceCap = repeat(
+    repeat(fill(2000.0, 50)', outer = (size(params.UCL, 2), 1)),
+    outer = (1, 1, EDHorizon),
+)
 FuelAdjustment = 2.0
 NLCAdjustment = 1.2
 ErrorAdjustment = 0.25
@@ -84,20 +85,21 @@ LDESDur_str = join(LDESDur, "-")
 LDESEta_str = join(LDESEta, "-")
 
 output_folder =
-    "output/Strategic/BaseLinear/5GW_" *
-    "ED" *
+    "output/Strategic/2000PC/" *
+    "$Cap" *
+    "GW_ED" *
     "$EDHorizon" *
     "_Strategic_" *
     "$StrategicES" *
-    # "_FORB_" *
-    # "$FORB" *
-    # "_ratio" *
-    # "$ratio" *
+    "_FORB_" *
+    "$FORB" *
+    "_ratio" *
+    "$ratio" *
     "_Seg" *
     "$ESSeg"
-# "_BSESCbid" *
-# "$BSESCbidAdjustment" 
 # *
+# "_BSESCbid" *
+# "$BSESCbidAdjustment" *
 # "_LDESRatio_" *
 # "$LDESRatio_str" *
 # "_LDESDur_" *
@@ -116,7 +118,8 @@ mkpath(output_folder)
 #     "$ESMC" *
 #     "/Region1/4hrmodel1_5Seg.jld2",
 # ]
-model_base_folder = "models/5GWLDES/BAW" * "$BAWindow" * "EDH" * "$EDHorizon"
+model_base_folder =
+    "models/" * "$Cap" * "GWLDES2000PC/BAW" * "$BAWindow" * "EDH" * "$EDHorizon"
 
 # Update strategic storage scale base on set ratio
 storagebidmodels = []
