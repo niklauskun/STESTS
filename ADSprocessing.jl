@@ -6,9 +6,11 @@ using Interpolations
 
 RealTimeNoise = true
 Year = 2022
+Cap = 5
 # CurrentMix = true
 TransmissionCap = true
-DataName = "./data/ADS2032_20GWBES_BS_AggES_" * "$Year" * "_fixed.jld2"
+DataName =
+    "./data/ADS2032_" * "$Cap" * "GWBES_BS_AggES_" * "$Year" * "_fixed.jld2"
 folder = "2032 ADS PCM V2.4.1 Public Data/Processed Data/" * "$Year"
 
 @info "Reading data from $folder..."
@@ -172,7 +174,7 @@ timereaddata = @elapsed begin
         CSV.read(joinpath(folder, "StorageMap_C_Agg.csv"), DataFrame)[:, 2:end],
     )
     storagedata = CSV.read(
-        joinpath(folder, "Storage_C_4hr_20GW_Strategic_Agg.csv"),
+        joinpath(folder, "Storage_C_4hr_" * "$Cap" * "GW_Strategic_Agg.csv"),
         DataFrame,
     )
     ESDABids =
@@ -186,6 +188,8 @@ timereaddata = @elapsed begin
     ESOC = storagedata[!, :"MaxCap(MWh)"] # read storage state of charge capacity, in MWh
     ESOCini = 0.5 * ESOC # initial state of charge, in MWh
     EStrategic = storagedata[!, :"Strategic"] # read storage strategic status
+    EMC = map(x -> x == 0.8 ? 0.0 : x == 0.9 ? 20.0 : missing, Eeta)
+
     @assert length(EPC) == size(storagemap, 1) "storage data length mismatch."
 
     # read demand data
@@ -243,6 +247,7 @@ timereaddata = @elapsed begin
     ESOC = convert(Vector{Float64}, ESOC)
     ESOCini = convert(Vector{Float64}, ESOCini)
     EStrategic = convert(Vector{Int64}, EStrategic)
+    EMC = convert(Vector{Float64}, EMC)
     UCL = convert(Matrix{Float64}, UCL)
 
     if RealTimeNoise == true
@@ -432,6 +437,8 @@ timereaddata = @elapsed begin
         ESOCini,
         "EStrategic",
         EStrategic,
+        "EMC",
+        EMC,
         "ESDABids",
         ESDABids,
         "ESRTBids",

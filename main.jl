@@ -1,16 +1,17 @@
 using STESTS, JuMP, Gurobi, CSV, DataFrames, Statistics, SMTPClient
 
 Year = 2022
-Cap = 10
+Cap = 5
 # Read data from .jld2 file 
 params = STESTS.read_jld2(
     "./data/ADS2032_" * "$Cap" * "GWBES_BS_AggES_" * "$Year" * "_fixed.jld2",
 )
-StrategicES = false
-ControlES = false
+StrategicES = true
+ControlES = true
 LDESRatio = [0.0, 0.0, 0.0, 0.0] # Ratios of long duration storage capacity to current BESS capacity
 LDESDur = [4, 10, 24, 100]
 LDESEta = [0.90, 0.75, 0.75, 0.75] # Do not set at 0.80 which is PHS efficiency
+LDESMC = [20.0, 10.0, 10.0, 10.0] # Long duration storage marginal cost, $/MWh
 FORB = true
 seed = 123
 heto = false
@@ -19,20 +20,19 @@ RandomSeed = 1
 ratio = 1.0
 RM = 0.03
 VOLL = 9000.0
-NDay = 364
+NDay = 2
 UCHorizon = Int(25) # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
 EDHorizon = Int(1) # optimization horizon for economic dispatch model, 1 without look-ahead, 12 with 1-hour look-ahead
 EDSteps = Int(12) # number of 5-min intervals in a hour
 ESSeg = Int(1)
-ESMC = 20.0
 BAWindow = Int(0) # bid-ahead window (number of 5-min intervals, 12-1hr, 48-4hr)
 # Define the quadratic function
-# function quadratic_function(x)
-#     a = 1 / 9000
-#     b = 29 / 30
-#     c = 300
-#     return min(a * x^2 + b * x + c, 2000)
-# end
+function quadratic_function(x)
+    a = 1 / 9000
+    b = 29 / 30
+    c = 300
+    return min(a * x^2 + b * x + c, 2000)
+end
 
 # function quadratic_function(x)
 #     a = 5.0
@@ -40,15 +40,15 @@ BAWindow = Int(0) # bid-ahead window (number of 5-min intervals, 12-1hr, 48-4hr)
 #     return min(a * x + b, 9000.0)
 # end
 
-# # Generate the array of x values
-# x_values = 0:100:4900
+# Generate the array of x values
+x_values = 0:100:4900
 
-# # Compute the quadratic function for each x value and store the results in an array
-# y_values = [quadratic_function(x) for x in x_values]
-# PriceCap = repeat(
-#     repeat(y_values', outer = (size(params.UCL, 2), 1)),
-#     outer = (1, 1, EDHorizon),
-# )
+# Compute the quadratic function for each x value and store the results in an array
+y_values = [quadratic_function(x) for x in x_values]
+PriceCap = repeat(
+    repeat(y_values', outer = (size(params.UCL, 2), 1)),
+    outer = (1, 1, EDHorizon),
+)
 # PriceCap = repeat(
 #     repeat(
 #         (range(220, stop = 1000, length = 40))',
@@ -56,10 +56,10 @@ BAWindow = Int(0) # bid-ahead window (number of 5-min intervals, 12-1hr, 48-4hr)
 #     ),
 #     outer = (1, 1, EDHorizon),
 # )
-PriceCap = repeat(
-    repeat(fill(2000.0, 50)', outer = (size(params.UCL, 2), 1)),
-    outer = (1, 1, EDHorizon),
-)
+# PriceCap = repeat(
+#     repeat(fill(2000.0, 50)', outer = (size(params.UCL, 2), 1)),
+#     outer = (1, 1, EDHorizon),
+# )
 FuelAdjustment = 2.0
 NLCAdjustment = 1.2
 ErrorAdjustment = 0.25
@@ -85,7 +85,7 @@ LDESDur_str = join(LDESDur, "-")
 LDESEta_str = join(LDESEta, "-")
 
 output_folder =
-    "output/Strategic/2000PC/" *
+    "output/Strategic/QuadVerifyLocal/" *
     "$Cap" *
     "GW_ED" *
     "$EDHorizon" *
@@ -109,17 +109,8 @@ output_folder =
 
 mkpath(output_folder)
 
-# model_filenames = [
-#     "models/BAW" *
-#     "$BAWindow" *
-#     "EDH" *
-#     "$EDHorizon" *
-#     "MC" *
-#     "$ESMC" *
-#     "/Region1/4hrmodel1_5Seg.jld2",
-# ]
 model_base_folder =
-    "models/" * "$Cap" * "GWLDES2000PC/BAW" * "$BAWindow" * "EDH" * "$EDHorizon"
+    "models/" * "$Cap" * "GW/BAW" * "$BAWindow" * "EDH" * "$EDHorizon"
 
 # Update strategic storage scale base on set ratio
 storagebidmodels = []
@@ -132,6 +123,7 @@ if StrategicES
         LDESRatio,
         LDESDur,
         LDESEta,
+        LDESMC,
         output_folder,
     )
 
@@ -244,7 +236,6 @@ timesolve = @elapsed begin
         bidmodels = storagebidmodels,
         LDESEta = LDESEta,
         ESSeg = ESSeg,
-        ESMC = ESMC,
         UCHorizon = UCHorizon,
         EDHorizon = EDHorizon,
         EDSteps = EDSteps,

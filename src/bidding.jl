@@ -232,6 +232,7 @@ function update_battery_storage!(
         new_ESOC = Float64[]
         new_ESOCini = Float64[]
         new_EStrategic = Int64[]
+        new_EMC = Float64[]
         remove_indices = Int[]
 
         # Process each entry for discretization if Eeta == 0.9
@@ -239,6 +240,7 @@ function update_battery_storage!(
             if params.Eeta[i] == 0.9 || params.Eeta[i] in LDESEta  # Adjust condition to include new efficiencies
                 epd = params.EPD[i]
                 eeta = params.Eeta[i]
+                emc = params.EMC[i]
                 append!(remove_indices, i)  # Mark this index for removal
 
                 # Decompose EPD
@@ -253,6 +255,7 @@ function update_battery_storage!(
                         append!(new_ESOC, 4 * comp)
                         append!(new_ESOCini, 2 * comp)
                         append!(new_EStrategic, 0)  # Assuming true strategic value as integer
+                        append!(new_EMC, emc)
 
                         # Create and append new row for storagemap corresponding to the region
                         new_storagemap =
@@ -268,6 +271,7 @@ function update_battery_storage!(
                     append!(new_ESOC, 4 * epd)
                     append!(new_ESOCini, 2 * epd)
                     append!(new_EStrategic, 0)  # Assuming true strategic value as integer
+                    append!(new_EMC, emc)
 
                     # Create and append new row for storagemap corresponding to the region
                     new_storagemap =
@@ -283,6 +287,7 @@ function update_battery_storage!(
         params.ESOC = vcat(params.ESOC, new_ESOC)
         params.ESOCini = vcat(params.ESOCini, new_ESOCini)
         params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+        params.EMC = vcat(params.EMC, new_EMC)
         params.storagemap = new_storagemap
 
         # # Remove aggregated entries
@@ -295,6 +300,7 @@ function update_battery_storage!(
         params.ESOC = params.ESOC[mask]
         params.ESOCini = params.ESOCini[mask]
         params.EStrategic = params.EStrategic[mask]
+        params.EMC = params.EMC[mask]
         params.storagemap = params.storagemap[mask, :]
 
         # save the new configurations to CSV
@@ -305,6 +311,7 @@ function update_battery_storage!(
             ESOC = new_ESOC,
             ESOCini = new_ESOCini,
             EStrategic = new_EStrategic,
+            EMC = new_EMC,
         )
         CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
     end
@@ -315,6 +322,7 @@ function update_battery_storage!(
     new_ESOC = []
     new_ESOCini = []
     new_EStrategic = []
+    new_EMC = []
 
     if ratio == 1.0
         println("All AI-Powered BES.")
@@ -363,6 +371,7 @@ function update_battery_storage!(
                 eeta = params.Eeta[battery_index]
                 esoc = params.ESOC[battery_index]
                 esocini = params.ESOCini[battery_index]
+                emc = params.EMC[battery_index]
 
                 append!(new_Eeta, [eeta, eeta])
                 append!(new_EPC, [epc * ratio, epc * (1 - ratio)])
@@ -370,6 +379,7 @@ function update_battery_storage!(
                 append!(new_ESOC, [esoc * ratio, esoc * (1 - ratio)])
                 append!(new_ESOCini, [esocini * ratio, esocini * (1 - ratio)])
                 append!(new_EStrategic, [1, 0])
+                append!(new_EMC, [emc, emc])
                 # # Aggregate values
                 # total_EPC = sum(params.EPC[battery_indices])
                 # total_EPD = sum(params.EPD[battery_indices])
@@ -411,6 +421,7 @@ function update_battery_storage!(
         params.ESOC = vcat(params.ESOC, new_ESOC)
         params.ESOCini = vcat(params.ESOCini, new_ESOCini)
         params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+        params.EMC = vcat(params.EMC, new_EMC)
 
         # Create a mask that is true for indices that should be kept
         remove_indices = sort(unique(remove_indices))
@@ -422,6 +433,7 @@ function update_battery_storage!(
         params.ESOC = params.ESOC[mask]
         params.ESOCini = params.ESOCini[mask]
         params.EStrategic = params.EStrategic[mask]
+        params.EMC = params.EMC[mask]
         params.storagemap = new_storagemap[mask, :]
     end
 
@@ -433,6 +445,7 @@ function update_battery_storage!(
         Control_ESOC = 4.0
         Control_ESOCini = 2.0
         Control_EStrategic = 2
+        Control_EMC = 20.0
         Control_Storagemap = [0, 1, 0, 0, 0, 0]'
 
         # Append control storage parameters to the existing arrays in `params`
@@ -442,6 +455,7 @@ function update_battery_storage!(
         push!(params.ESOC, Control_ESOC)
         push!(params.ESOCini, Control_ESOCini)
         push!(params.EStrategic, Control_EStrategic)
+        push!(params.EMC, Control_EMC)
         params.storagemap = vcat(params.storagemap, Control_Storagemap)
 
         append!(new_Eeta, Control_Eeta)
@@ -450,6 +464,7 @@ function update_battery_storage!(
         append!(new_ESOC, Control_ESOC)
         append!(new_ESOCini, Control_ESOCini)
         append!(new_EStrategic, Control_EStrategic)
+        append!(new_EMC, Control_EMC)
     end
 
     # Save the new entries to csv
@@ -460,6 +475,7 @@ function update_battery_storage!(
         ESOC = new_ESOC,
         ESOCini = new_ESOCini,
         EStrategic = new_EStrategic,  # Assuming you also have this array
+        EMC = new_EMC,
     )
 
     CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
@@ -519,6 +535,7 @@ function add_long_duration_storage!(
     LDESRatio::Vector{Float64},
     LDESDur::Vector{Int},
     LDESEta::Vector{Float64},
+    LDESMC::Vector{Float64},
     output_folder::String,
 )
     """
@@ -528,6 +545,7 @@ function add_long_duration_storage!(
         LDESRatio - New energy storage capacity proportional to the original energy storage capacity
         LDESDur - Duration of new energy storage
         LDESEta - One-way efficiency of new energy storage
+        LDESMC - Marginal cost of new energy storage
         output_folder - output folder
     Outputs: 
         params - Updated system data with new energy storage
@@ -539,6 +557,7 @@ function add_long_duration_storage!(
     new_ESOC = Float64[]
     new_ESOCini = Float64[]
     new_EStrategic = Int64[]
+    new_EMC = Float64[]
     new_storagemap = copy(params.storagemap)
 
     for i in eachindex(params.Eeta)
@@ -555,6 +574,7 @@ function add_long_duration_storage!(
                 ratio = LDESRatio[j]
                 duration = LDESDur[j]
                 eta = LDESEta[j]
+                emc = LDESMC[j]
                 new_EPC_val = original_EPC * ratio
                 new_EPD_val = original_EPD * ratio
                 new_ESOC_val = duration * new_EPC_val
@@ -566,6 +586,7 @@ function add_long_duration_storage!(
                 append!(new_ESOC, new_ESOC_val)
                 append!(new_ESOCini, new_ESOCini_val)
                 append!(new_EStrategic, original_strategic)
+                append!(new_EMC, emc)
 
                 new_storagemap =
                     vcat(new_storagemap, reshape(original_storagemap, 1, :))
@@ -580,6 +601,7 @@ function add_long_duration_storage!(
     params.ESOC = vcat(params.ESOC, new_ESOC)
     params.ESOCini = vcat(params.ESOCini, new_ESOCini)
     params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+    params.EMC = vcat(params.EMC, new_EMC)
     params.storagemap = new_storagemap
 
     # Save the new entries to CSV
@@ -590,6 +612,7 @@ function add_long_duration_storage!(
         ESOC = params.ESOC,
         ESOCini = params.ESOCini,
         EStrategic = params.EStrategic,
+        EMC = params.EMC,
     )
 
     CSV.write(joinpath(output_folder * "/Strategic", "ADDED_LDES.csv"), df)

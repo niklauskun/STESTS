@@ -250,7 +250,6 @@ function setEDConstraints(
     h,
     t,
     ts,
-    ESMC,
 )
     # Initialize ED matrices
     EDLInput = convert(Matrix{Float64}, AdjustedEDL[ts:ts+EDHorizon-1, :]')
@@ -321,19 +320,11 @@ function setEDConstraints(
             for i in axes(RTDBids, 1)
                 if params.EStrategic[i] == 0
                     if params.Eeta[i] == 0.9 || params.Eeta[i] in LDESEta
-                        if params.Eeta[i] == 0.9
-                            db[i, :] =
-                                (
-                                    vrt[i, :, (h-1)*EDSteps+t] ./
-                                    params.Eeta[i] .+ ESMC
-                                ) / EDSteps
-                        elseif params.Eeta[i] in LDESEta
-                            db[i, :] =
-                                (
-                                    vrt[i, :, (h-1)*EDSteps+t] ./
-                                    params.Eeta[i] .+ 10.0
-                                ) / EDSteps
-                        end
+                        db[i, :] =
+                            (
+                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
+                                params.EMC[i]
+                            ) / EDSteps
                         db[i, :] = map(
                             x ->
                                 x > ESPeakBid ? x * ESPeakBidAdjustment : x,
@@ -375,19 +366,11 @@ function setEDConstraints(
             # update bids for AI-Enhaned energy storage using OCB + AI
             for (i, model) in bidmodels
                 if d == 1
-                    if params.Eeta == 0.9
-                        db[i, :] =
-                            (
-                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
-                                ESMC
-                            ) / EDSteps
-                    elseif params.Eeta[i] in LDESEta
-                        db[i, :] =
-                            (
-                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
-                                10.0
-                            ) / EDSteps
-                    end
+                    db[i, :] =
+                        (
+                            vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
+                            params.EMC[i]
+                        ) / EDSteps
                     db[i, :] = map(
                         x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
                         db[i, :],
@@ -407,11 +390,7 @@ function setEDConstraints(
                     ]
                     enforce_strictly_decreasing_vector(vavg)
                     cb[i, :] .= -vavg .* 0.9 ./ EDSteps
-                    if params.Eeta[i] == 0.9
-                        db[i, :] .= (vavg ./ 0.9 .+ ESMC) ./ EDSteps
-                    elseif params.Eeta[i] in LDESEta
-                        db[i, :] .= (vavg ./ params.Eeta[i] .+ 10.0) ./ EDSteps
-                    end
+                    db[i, :] .= (vavg ./ 0.9 .+ params.EMC[i]) ./ EDSteps
                     db[i, :] = map(
                         x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
                         db[i, :],
@@ -763,7 +742,6 @@ function solving(
     bidmodels::Vector{Any} = [],
     LDESEta::Array{Float64} = [0.90],
     ESSeg::Int = 1,
-    ESMC::Float64 = 10.0,
     UCHorizon::Int = 24,
     EDHorizon::Int = 1,
     EDSteps::Int = 12,
@@ -886,27 +864,16 @@ function solving(
                     mean(reshape(EDprice288[!, col], 12, :), dims = 1)
             end
             for i in axes(DADBids, 1)
-                if params.Eeta[i] == 0.9
+                if params.Eeta[i] == 0.9 || params.Eeta[i] in LDESEta
                     vda[i, :] = generate_value_function(
                         24,
                         params.EPD[i] / params.ESOC[i],
                         params.Eeta[i],
                         1,
                         EDprice24 * params.storagemap[i, :];
-                        c = ESMC,
+                        c = params.EMC[i],
                     )
-                    DAdb[i, :] = vda[i, :] / params.Eeta[i] .+ ESMC
-                    DAcb[i, :] = -vda[i, :] .* params.Eeta[i]
-                elseif params.Eeta[i] in LDESEta
-                    vda[i, :] = generate_value_function(
-                        24,
-                        params.EPD[i] / params.ESOC[i],
-                        params.Eeta[i],
-                        1,
-                        EDprice24 * params.storagemap[i, :];
-                        c = 10.0,
-                    )
-                    DAdb[i, :] = vda[i, :] / params.Eeta[i] .+ 10.0
+                    DAdb[i, :] = vda[i, :] / params.Eeta[i] .+ params.EMC[i]
                     DAcb[i, :] = -vda[i, :] .* params.Eeta[i]
                 else
                     DAdb[i, :] = convert(
@@ -1066,23 +1033,14 @@ function solving(
 
             # generate non-strategic RT bids
             for i in axes(RTDBids, 1)
-                if params.Eeta[i] == 0.9
+                if params.Eeta[i] == 0.9 || params.Eeta[i] in LDESEta
                     vrt[i, :, :] = generate_value_function(
                         288,
                         params.EPD[i] / params.ESOC[i] / EDSteps,
                         params.Eeta[i],
                         ESSeg,
                         UCprice288 * params.storagemap[i, :];
-                        c = ESMC,
-                    )
-                elseif params.Eeta[i] in LDESEta
-                    vrt[i, :, :] = generate_value_function(
-                        288,
-                        params.EPD[i] / params.ESOC[i] / EDSteps,
-                        params.Eeta[i],
-                        ESSeg,
-                        UCprice288 * params.storagemap[i, :];
-                        c = 10.0,
+                        c = params.EMC[i],
                     )
                 end
             end
@@ -1142,7 +1100,6 @@ function solving(
                         h,
                         t,
                         ts,
-                        ESMC,
                     )
 
                     # Solve economic dispatch model
