@@ -541,6 +541,9 @@ function writeEDtoCSVandUpdateSOC(
     EDVOLL,
     EDEScost,
     EDcost,
+    #TODO: Remove this once confirmed
+    EDEScostold,
+    EDcostold,
     EDSteps,
     ESSeg,
     d,
@@ -548,28 +551,6 @@ function writeEDtoCSVandUpdateSOC(
     t,
 )
     ts = ((d - 1) * 24 + h - 1) * EDSteps + t # time step
-    EDGMCcost[ts] =
-        sum(value.(edmodel[:guc])[:, 1] .* params.GMC * FuelAdjustment) /
-        EDSteps
-    EDGSMCcost[ts] =
-        sum(
-            value.(edmodel[:gucs])[:, :, 1] .* EDGSMC[:, :, 1] * FuelAdjustment,
-        ) / EDSteps
-    EDVOLL[ts] =
-        sum(value.(edmodel[:s])[:, :, 1] .* PriceCap[:, :, 1]) / EDSteps
-    EDEScost[ts] = sum(
-        value.(edmodel[:d])[:, :, 1] .* db[:, :] +
-        value.(edmodel[:c])[:, :, 1] .* cb[:, :],
-    )
-    EDcost[ts] =
-        EDGMCcost[ts] +
-        EDGSMCcost[ts] +
-        EDVOLL[ts] +
-        EDEScost[ts] +
-        sum(
-            EDU[:, (h-1)*EDSteps+t] .* params.GNLC / EDSteps +
-            EDV[:, (h-1)*EDSteps+t] .* params.GSUC,
-        )
     EDGPIni = value.(edmodel[:guc])[:, 1]
     EDGdf = DataFrame(EDGPIni', :auto)
     CSV.write(joinpath(output_folder, "EDGen.csv"), EDGdf, append = true)
@@ -611,6 +592,37 @@ function writeEDtoCSVandUpdateSOC(
         EDSOCinidf,
         append = true,
     )
+    EDGMCcost[ts] = sum(EDGPIni .* params.GMC * FuelAdjustment) / EDSteps
+    EDGSMCcost[ts] =
+        sum(
+            value.(edmodel[:gucs])[:, :, 1] .* EDGSMC[:, :, 1] * FuelAdjustment,
+        ) / EDSteps
+    EDVOLL[ts] =
+        sum(value.(edmodel[:s])[:, :, 1] .* PriceCap[:, :, 1]) / EDSteps
+    EDEScost[ts] = sum(EDESD .* params.EMC) / EDSteps
+    EDcost[ts] =
+        EDGMCcost[ts] +
+        EDGSMCcost[ts] +
+        EDVOLL[ts] +
+        EDEScost[ts] +
+        sum(
+            EDU[:, (h-1)*EDSteps+t] .* params.GNLC / EDSteps +
+            EDV[:, (h-1)*EDSteps+t] .* params.GSUC,
+        )
+    ### TODO: Remove this once confirmed
+    EDEScostold[ts] = sum(
+        value.(edmodel[:d])[:, :, 1] .* db[:, :] +
+        value.(edmodel[:c])[:, :, 1] .* cb[:, :],
+    )
+    EDcostold[ts] =
+        EDGMCcost[ts] +
+        EDGSMCcost[ts] +
+        EDVOLL[ts] +
+        EDEScostold[ts] +
+        sum(
+            EDU[:, (h-1)*EDSteps+t] .* params.GNLC / EDSteps +
+            EDV[:, (h-1)*EDSteps+t] .* params.GSUC,
+        )
     EDTrans = value.(edmodel[:f])[:, 1]
     EDTransdf = DataFrame(EDTrans', :auto)
     CSV.write(joinpath(output_folder, "EDTrans.csv"), EDTransdf, append = true)
@@ -770,6 +782,9 @@ function solving(
     VOLLcost = Array{Float64}(undef, Nday)
     EScost = Array{Float64}(undef, Nday)
     EDcost = Array{Float64}(undef, Nday * 24 * EDSteps)
+    ### TODO: Remove this once confirmed
+    EDEScostold = Array{Float64}(undef, Nday * 24 * EDSteps)
+    EDcostold = Array{Float64}(undef, Nday * 24 * EDSteps)
     EDGMCcost = Array{Float64}(undef, Nday * 24 * EDSteps)
     EDGSMCcost = Array{Float64}(undef, Nday * 24 * EDSteps)
     EDVOLL = Array{Float64}(undef, Nday * 24 * EDSteps)
@@ -936,10 +951,7 @@ function solving(
                 FuelAdjustment,
             )
             VOLLcost[d] = sum(value.(ucmodel[:s])[1:24] .* VOLL)
-            EScost[d] = sum(
-                value.(ucmodel[:d])[:, 1:24] .* DAdb[:, 1:24] -
-                value.(ucmodel[:c])[:, 1:24] .* DAcb[:, 1:24],
-            )
+            EScost[d] = sum(value.(ucmodel[:d])[:, 1:24] .* params.EMC)
             UCcost[d] =
                 GMCcost[d] +
                 GSMCcost[d] +
@@ -1129,6 +1141,9 @@ function solving(
                                 EDVOLL,
                                 EDEScost,
                                 EDcost,
+                                ### TODO: Remove this once confirmed
+                                EDEScostold,
+                                EDcostold,
                                 EDSteps,
                                 ESSeg,
                                 d,
@@ -1178,7 +1193,20 @@ function solving(
         end
     end
     EDcostdf = DataFrame(cost = EDcost)
+    EDEScostdf = DataFrame(cost = EDEScost)
+    ### TODO: Remove this once confirmed
+    EDcostolddf = DataFrame(cost = EDcostold)
     CSV.write(joinpath(output_folder, "EDcost.csv"), EDcostdf, append = true)
+    CSV.write(
+        joinpath(output_folder, "EDEScost.csv"),
+        EDEScostdf,
+        append = true,
+    )
+    CSV.write(
+        joinpath(output_folder, "EDcostold.csv"),
+        EDcostolddf,
+        append = true,
+    )
     return UCcost, EDcost
 end
 

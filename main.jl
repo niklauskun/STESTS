@@ -85,7 +85,7 @@ LDESDur_str = join(LDESDur, "-")
 LDESEta_str = join(LDESEta, "-")
 
 output_folder =
-    "output/Strategic/QuadVerifyLocal/" *
+    "output/Strategic/TestNewCost/" *
     "$Cap" *
     "GW_ED" *
     "$EDHorizon" *
