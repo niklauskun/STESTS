@@ -753,6 +753,7 @@ function solving(
     PriceCap::Array{Float64};
     bidmodels::Vector{Any} = [],
     LDESEta::Array{Float64} = [0.90],
+    ESSegMax::Int = 5,
     ESSeg::Int = 1,
     UCHorizon::Int = 24,
     EDHorizon::Int = 1,
@@ -769,12 +770,15 @@ function solving(
     ESPeakBid::Float64 = 100.0,
     seed::Int = 0,
 )
+    total_uc_solution_time = 0.0 ### total time for solving the UC problem
+    total_ed_solution_time = 0.0 ### total time for solving the ED problem
+
     GSMC = repeat(params.GSMC, outer = (1, 1, UCHorizon))
     EDGSMC = repeat(params.GSMC, outer = (1, 1, EDHorizon))
     SU = zeros(Int, size(params.GPIni, 1)) # initial generator must on time
     SD = zeros(Int, size(params.GPIni, 1)) # initial generator down on time
     storagezone = [findmax(row)[2] for row in eachrow(params.storagemap)]
-    segment_length = 5 ÷ ESSeg
+    segment_length = ESSegMax ÷ ESSeg
 
     UCcost = Array{Float64}(undef, Nday)
     GMCcost = Array{Float64}(undef, Nday)
@@ -939,7 +943,11 @@ function solving(
         )
         # Solve unit commitment model
         @info "Solving day $d UC."
+        start_time_uc = time()
         optimize!(ucmodel)
+        end_time_uc = time()
+        iteration_time_uc = end_time_uc - start_time_uc
+        total_uc_solution_time += iteration_time_uc
 
         # Extract solution and solve economic dispatch model
         if termination_status(ucmodel) == MOI.OPTIMAL
@@ -1116,7 +1124,11 @@ function solving(
 
                     # Solve economic dispatch model
                     @info "Solving day $d hour $h step $t ED."
+                    start_time_ed = time()
                     optimize!(edmodel)
+                    end_time_ed = time()
+                    iteration_time_ed = end_time_ed - start_time_ed
+                    total_ed_solution_time += iteration_time_ed
 
                     # Extract solution
                     if termination_status(edmodel) == MOI.OPTIMAL
@@ -1206,6 +1218,16 @@ function solving(
         joinpath(output_folder, "EDcostold.csv"),
         EDcostolddf,
         append = true,
+    )
+    println(
+        "Total solution time for all uc iterations: ",
+        total_uc_solution_time,
+        " seconds",
+    )
+    println(
+        "Total solution time for all ed iterations: ",
+        total_ed_solution_time,
+        " seconds",
     )
     return UCcost, EDcost
 end

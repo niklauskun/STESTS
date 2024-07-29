@@ -210,6 +210,8 @@ function update_battery_storage!(
     ratio::Float64,
     output_folder::String,
     heto::Bool,
+    split::Bool,
+    split_num::Int,
     ESAdjustment::Float64,
     LDESEta::Vector{Float64},
 )
@@ -222,7 +224,86 @@ function update_battery_storage!(
             params.ESOCini[i] *= ESAdjustment
         end
     end
-    if heto
+    if split
+        # Initialize temporary storage for split entries
+        new_Eeta = Float64[]
+        new_EPC = Float64[]
+        new_EPD = Float64[]
+        new_ESOC = Float64[]
+        new_ESOCini = Float64[]
+        new_EStrategic = Int64[]
+        new_EMC = Float64[]
+        new_storagemap = copy(params.storagemap)
+        remove_indices = Int[]
+
+        # Process each entry for splitting if Eeta == 0.9
+        for i in eachindex(params.Eeta)
+            if params.Eeta[i] == 0.9 || params.Eeta[i] in LDESEta  # Adjust condition to include new efficiencies
+                epc = params.EPC[i]
+                epd = params.EPD[i]
+                esoc = params.ESOC[i]
+                esocini = params.ESOCini[i]
+                eeta = params.Eeta[i]
+                emc = params.EMC[i]
+                append!(remove_indices, i)  # Mark this index for removal
+
+                # Split capacity into segments
+                for _ in 1:split_num
+                    split_epc = epc / split_num
+                    split_epd = epd / split_num
+                    split_esoc = esoc / split_num
+                    split_esocini = esocini / split_num
+
+                    append!(new_Eeta, eeta)
+                    append!(new_EPC, split_epc)
+                    append!(new_EPD, split_epd)
+                    append!(new_ESOC, split_esoc)
+                    append!(new_ESOCini, split_esocini)
+                    append!(new_EStrategic, 0)  # Assuming default strategic value as 0
+                    append!(new_EMC, emc)
+
+                    # Create and append new row for storagemap corresponding to the region
+                    new_storagemap =
+                        vcat(new_storagemap, params.storagemap[i, :]')  # Append column-wise
+                end
+            end
+        end
+
+        # Update params with the new split storages
+        params.Eeta = vcat(params.Eeta, new_Eeta)
+        params.EPC = vcat(params.EPC, new_EPC)
+        params.EPD = vcat(params.EPD, new_EPD)
+        params.ESOC = vcat(params.ESOC, new_ESOC)
+        params.ESOCini = vcat(params.ESOCini, new_ESOCini)
+        params.EStrategic = vcat(params.EStrategic, new_EStrategic)
+        params.EMC = vcat(params.EMC, new_EMC)
+        params.storagemap = new_storagemap
+
+        # Remove original aggregated entries
+        remove_indices = sort(unique(remove_indices))
+        mask = trues(length(params.Eeta))
+        mask[remove_indices] .= false
+        params.Eeta = params.Eeta[mask]
+        params.EPC = params.EPC[mask]
+        params.EPD = params.EPD[mask]
+        params.ESOC = params.ESOC[mask]
+        params.ESOCini = params.ESOCini[mask]
+        params.EStrategic = params.EStrategic[mask]
+        params.EMC = params.EMC[mask]
+        params.storagemap = params.storagemap[mask, :]
+
+        # Save the new configurations to CSV
+        df = DataFrame(
+            Eeta = new_Eeta,
+            EPC = new_EPC,
+            EPD = new_EPD,
+            ESOC = new_ESOC,
+            ESOCini = new_ESOCini,
+            EStrategic = new_EStrategic,
+            EMC = new_EMC,
+        )
+        CSV.write(joinpath(output_folder * "/Strategic", "ADDED_ES.csv"), df)
+    elseif heto
         # Retrieve the new entries and their corresponding regions from params
         # Initialize temporary storage for new discrete entries
         new_storagemap = copy(params.storagemap)
