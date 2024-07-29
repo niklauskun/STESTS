@@ -19,15 +19,15 @@ split = false # split existing BESS capacity into multiple segments
 split_num = 1 # number of segments to split the existing BESS capacity
 RandomModel = false
 RandomSeed = 1
-ratio = 1.0
+ratio = 0.0
 RM = 0.03
 VOLL = 9000.0
-NDay = 2
+NDay = 1
 UCHorizon = Int(25) # optimization horizon for unit commitment model, 24 hours for WECC data, 4 hours for 3-bus test data
 EDHorizon = Int(1) # optimization horizon for economic dispatch model, 1 without look-ahead, 12 with 1-hour look-ahead
 EDSteps = Int(12) # number of 5-min intervals in a hour
 ESSegMax = Int(5)
-ESSeg = Int(1)
+ESSeg = Int(5)
 BAWindow = Int(0) # bid-ahead window (number of 5-min intervals, 12-1hr, 48-4hr)
 # Define the quadratic function
 function quadratic_function(x)
@@ -71,7 +71,7 @@ SegmentAdjustment = [1.0, 2.0, 2.0, 2.0, 2.0]
 params.GSMC = params.GSMC .* SegmentAdjustment'
 ESPeakBidAdjustment = 1.0
 ESPeakBid = 100.0
-BSESCbidAdjustment = 0.5
+BSESCbidAdjustment = 1.0
 GSMCSeg = join(SegmentAdjustment, "-")
 if Year == 2022
     ESAdjustment = 1.0
