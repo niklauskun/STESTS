@@ -25,23 +25,23 @@ function economicdispatch(
     # nrenewable = size(params.renewablemap, 1) # number of renewable generators
     nstorage = size(params.storagemap, 1) # number of storage units
 
-    ESegSOCini = Dict()
+    # ESegSOCini = Dict()
 
-    # Fill ESegSOCini
-    for i in 1:nstorage
-        excess_soc = params.ESOCini[i]
-        segment_increment = params.ESOC[i] / ESSeg  # Maximum increment per segment
+    # # Fill ESegSOCini
+    # for i in 1:nstorage
+    #     excess_soc = params.ESOCini[i]
+    #     segment_increment = params.ESOC[i] / ESSeg  # Maximum increment per segment
 
-        for s in 1:ESSeg
-            if excess_soc > 0
-                increment = min(segment_increment, excess_soc)
-                ESegSOCini[i, s] = increment
-                excess_soc -= increment
-            else
-                ESegSOCini[i, s] = 0
-            end
-        end
-    end
+    #     for s in 1:ESSeg
+    #         if excess_soc > 0
+    #             increment = min(segment_increment, excess_soc)
+    #             ESegSOCini[i, s] = increment
+    #             excess_soc -= increment
+    #         else
+    #             ESegSOCini[i, s] = 0
+    #         end
+    #     end
+    # end
 
     # Define model
     edmodel = Model()
@@ -56,27 +56,10 @@ function economicdispatch(
     @variable(edmodel, gs[1:nbus, 1:ntimepoints] >= 0) # Solar output
     @variable(edmodel, gw[1:nbus, 1:ntimepoints] >= 0) # Wind output
     @variable(edmodel, 0 <= s[1:nbus, 1:50, 1:ntimepoints] <= 100) # Slack variable
-    # @variable(edmodel, c[1:nstorage, 1:ntimepoints] >= 0) # Storage charging
-    # @variable(edmodel, d[1:nstorage, 1:ntimepoints] >= 0) # Storage discharging
-    # @variable(edmodel, e[1:nstorage, 1:ntimepoints] >= 0) # Storage energy level
-    @variable(edmodel, c[1:nstorage, 1:ESSeg, 1:ntimepoints] >= 0) # Storage charging
-    @variable(edmodel, d[1:nstorage, 1:ESSeg, 1:ntimepoints] >= 0) # Storage discharging
-    @variable(edmodel, e[1:nstorage, 1:ESSeg, 1:ntimepoints] >= 0) # Storage energy level
-    @expression(
-        edmodel,
-        totalc[i = 1:nstorage, t = 1:ntimepoints],
-        sum(c[i, :, t])
-    )
-    @expression(
-        edmodel,
-        totald[i = 1:nstorage, t = 1:ntimepoints],
-        sum(d[i, :, t])
-    )
-    @expression(
-        edmodel,
-        totale[i = 1:nstorage, t = 1:ntimepoints],
-        sum(e[i, :, t])
-    )
+    @variable(edmodel, c[1:nstorage, 1:ntimepoints] >= 0) # Storage charging
+    @variable(edmodel, d[1:nstorage, 1:ntimepoints] >= 0) # Storage discharging
+    @variable(edmodel, e[1:nstorage, 1:ntimepoints] >= 0) # Storage energy level
+    @variable(edmodel, eT[1:nstorage, 1:ESSeg] >= 0) # Storage end segment energy level
     @expression(edmodel, totals[z = 1:nbus, t = 1:ntimepoints], sum(s[z, :, t]))
     @variable(edmodel, gucs[1:nucgen, 1:ngucs, 1:ntimepoints] >= 0) # Conventional generator segment output
 
@@ -88,21 +71,9 @@ function economicdispatch(
         sum(FuelAdjustment * GSMC .* gucs) / Steps +
         sum(200 .* d - 0 .* c) / Steps +
         sum(PriceCap .* s) / Steps -
-        sum(50 .* gh + 50 .* gs + 50 .* gw) / Steps
+        sum(50 .* gh + 50 .* gs + 50 .* gw) / Steps - sum(10 .* eT)
     )
 
-    # Bus wise load balance constraints with transmission
-    # @constraint(
-    #     edmodel,
-    #     LoadBalance[z = 1:nbus, t = 1:ntimepoints],
-    #     sum(params.genmap[:, z] .* guc[:, t]) +
-    #     sum(params.hydromap[:, z] .* gh[:, t]) +
-    #     sum(params.renewablemap[:, z] .* gr[:, t]) +
-    #     sum(params.storagemap[:, z] .* totald[:, t]) -
-    #     sum(params.storagemap[:, z] .* totalc[:, t]) +
-    #     sum(params.transmap[:, z] .* f[:, t]) +
-    #     s[z, t] == EDL[z, t]
-    # )
     @constraint(
         edmodel,
         LoadBalance[z = 1:nbus, t = 1:ntimepoints],
@@ -110,8 +81,8 @@ function economicdispatch(
         gh[z, t] +
         gs[z, t] +
         gw[z, t] +
-        sum(params.storagemap[:, z] .* totald[:, t]) -
-        sum(params.storagemap[:, z] .* totalc[:, t]) +
+        sum(params.storagemap[:, z] .* d[:, t]) -
+        sum(params.storagemap[:, z] .* c[:, t]) +
         sum(params.transmap[:, z] .* f[:, t]) +
         sum(s[z, :, t]) == EDL[z, t]
     )
@@ -169,97 +140,49 @@ function economicdispatch(
     # )
 
     # Storage charge and discharge constraints
-    # @constraint(
-    #     edmodel,
-    #     StorageCharge[i = 1:nstorage, t = 1:ntimepoints],
-    #     c[i, t] <= params.EPC[i]
-    # )
-
-    # @constraint(
-    #     edmodel,
-    #     StorageDischarge[i = 1:nstorage, t = 1:ntimepoints],
-    #     d[i, t] <= params.EPD[i]
-    # )
-
     @constraint(
         edmodel,
         StorageCharge[i = 1:nstorage, t = 1:ntimepoints],
-        totalc[i, t] <= params.EPC[i]
+        c[i, t] <= params.EPC[i]
     )
 
     @constraint(
         edmodel,
         StorageDischarge[i = 1:nstorage, t = 1:ntimepoints],
-        totald[i, t] <= params.EPD[i]
+        d[i, t] <= params.EPD[i]
     )
 
     # Storage energy level constraints
-    # @constraint(
-    #     edmodel,
-    #     StorageSOCCap[i = 1:nstorage, t = 1:ntimepoints],
-    #     e[i, t] <= params.ESOC[i]
-    # )
-
     @constraint(
         edmodel,
         StorageSOCCap[i = 1:nstorage, t = 1:ntimepoints],
-        totale[i, t] <= params.ESOC[i]
+        e[i, t] <= params.ESOC[i]
     )
 
     @constraint(
         edmodel,
-        SegStorageSOCCap[i = 1:nstorage, s = 1:ESSeg, t = 1:ntimepoints],
-        e[i, s, t] <= params.ESOC[i] / ESSeg
+        SegStorageSOCCap[i = 1:nstorage, s = 1:ESSeg],
+        eT[i, s] <= params.ESOC[i] / ESSeg
     )
 
-    @constraint(
-        edmodel,
-        StorageSOCIni[i = 1:nstorage, s = 1:ESSeg],
-        e[i, s, 1] ==
-        ESegSOCini[i, s] + c[i, s, 1] * params.Eeta[i] / Steps -
-        d[i, s, 1] / params.Eeta[i] / Steps
-    )
-
-    @constraint(
-        edmodel,
-        StorageSOC[i = 1:nstorage, s = 1:ESSeg, t = 2:ntimepoints],
-        e[i, s, t] ==
-        e[i, s, t-1] + c[i, s, 1] * params.Eeta[i] / Steps -
-        d[i, s, 1] / params.Eeta[i] / Steps
-    )
+    @constraint(edmodel, EndSoC[i = 1:nstorage], sum(eT[i, :]) == e[i, Horizon])
 
     # Storage SOC evolution constraints
-    # @constraint(
-    #     edmodel,
-    #     StorageSOCIni[i = 1:nstorage],
-    #     e[i, 1] ==
-    #     params.ESOCini[i] + c[i, 1] * params.Eeta[i] / Steps -
-    #     d[i, 1] / params.Eeta[i] / Steps
-    # )
+    @constraint(
+        edmodel,
+        StorageSOCIni[i = 1:nstorage],
+        e[i, 1] ==
+        params.ESOCini[i] + c[i, 1] * params.Eeta[i] / Steps -
+        d[i, 1] / params.Eeta[i] / Steps
+    )
 
-    # @constraint(
-    #     edmodel,
-    #     StorageSOCIni[i = 1:nstorage],
-    #     totale[i, 1] ==
-    #     params.ESOCini[i] + totalc[i, 1] * params.Eeta[i] / Steps -
-    #     totald[i, 1] / params.Eeta[i] / Steps
-    # )
-
-    # @constraint(
-    #     edmodel,
-    #     StorageSOC[i = 1:nstorage, t = 2:ntimepoints],
-    #     e[i, t] ==
-    #     e[i, t-1] + c[i, t] * params.Eeta[i] / Steps -
-    #     d[i, t] / params.Eeta[i] / Steps
-    # )
-
-    # @constraint(
-    #     edmodel,
-    #     StorageSOC[i = 1:nstorage, t = 2:ntimepoints],
-    #     totale[i, t] ==
-    #     totale[i, t-1] + totalc[i, t] * params.Eeta[i] / Steps -
-    #     totald[i, t] / params.Eeta[i] / Steps
-    # )
+    @constraint(
+        edmodel,
+        StorageSOC[i = 1:nstorage, t = 2:ntimepoints],
+        e[i, t] ==
+        e[i, t-1] + c[i, t] * params.Eeta[i] / Steps -
+        d[i, t] / params.Eeta[i] / Steps
+    )
 
     # Conventional generator segment constraints
     @constraint(

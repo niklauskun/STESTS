@@ -228,6 +228,7 @@ function setEDConstraints(
     StrategicES,
     FORB,
     bidmodels,
+    socb,
     db,
     cb,
     vrt,
@@ -320,63 +321,28 @@ function setEDConstraints(
             for i in axes(RTDBids, 1)
                 if params.EStrategic[i] == 0
                     if params.Eeta[i] == 0.9 || params.Eeta[i] in LDESEta
-                        db[i, :] =
-                            (
-                                vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
-                                params.EMC[i]
-                            ) / EDSteps
-                        db[i, :] = map(
-                            x ->
-                                x > ESPeakBid ? x * ESPeakBidAdjustment : x,
-                            db[i, :],
-                        )
-                        cb[i, :] =
-                            -vrt[i, :, (h-1)*EDSteps+t] .* params.Eeta[i] /
-                            EDSteps
-                        cb[i, :] = map(
-                            x -> x < 0.0 ? x * BSESCbidAdjustment : x,
-                            cb[i, :],
-                        )
+                        socb[i, :] = vrt[i, :, (h-1)*EDSteps+t]
                         if tp == 1
-                            cbdf = DataFrame(12 * cb[i, :]', :auto)
-                            dbdf = DataFrame(12 * db[i, :]', :auto)
+                            socbdf = DataFrame(12 * socb[i, :]', :auto)
                             CSV.write(
                                 joinpath(
                                     output_folder * "/NStrategic",
-                                    "EDESCB" * "$i" * ".csv",
+                                    "EDESB" * "$i" * ".csv",
                                 ),
-                                cbdf,
-                                append = true,
-                            )
-                            CSV.write(
-                                joinpath(
-                                    output_folder * "/NStrategic",
-                                    "EDESDB" * "$i" * ".csv",
-                                ),
-                                dbdf,
+                                socbdf,
                                 append = true,
                             )
                         end
                     else
-                        db[i, :] .= EDDBidInput[i, tp] / EDSteps
-                        cb[i, :] .= -EDCBidInput[i, tp] / EDSteps
+                        db[i] = EDDBidInput[i, tp] / EDSteps
+                        cb[i] = -EDCBidInput[i, tp] / EDSteps
                     end
                 end
             end
             # update bids for AI-Enhaned energy storage using OCB + AI
             for (i, model) in bidmodels
                 if d == 1
-                    db[i, :] =
-                        (
-                            vrt[i, :, (h-1)*EDSteps+t] ./ params.Eeta[i] .+
-                            params.EMC[i]
-                        ) / EDSteps
-                    db[i, :] = map(
-                        x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
-                        db[i, :],
-                    )
-                    cb[i, :] =
-                        -vrt[i, :, (h-1)*EDSteps+t] .* params.Eeta[i] / EDSteps
+                    socb[i, :] = vrt[i, :, (h-1)*EDSteps+t]
                 else
                     v = model(
                         predictors[
@@ -389,34 +355,20 @@ function setEDConstraints(
                         i in 1:ESSeg
                     ]
                     enforce_strictly_decreasing_vector(vavg)
-                    cb[i, :] .= -vavg .* 0.9 ./ EDSteps
-                    db[i, :] .= (vavg ./ 0.9 .+ params.EMC[i]) ./ EDSteps
-                    db[i, :] = map(
-                        x -> x > ESPeakBid ? x * ESPeakBidAdjustment : x,
-                        db[i, :],
-                    )
-                    if params.EStrategic[i] == 2
-                        cb[i, :] .= cb[i, :] .- 0.01
-                        db[i, :] .= db[i, :] .- 0.01
-                    end
+                    socb[i, :] .= vavg
+                    # if params.EStrategic[i] == 2
+                    #     cb[i, :] .= cb[i, :] .- 0.01
+                    #     db[i, :] .= db[i, :] .- 0.01
+                    # end
                 end
                 if tp == 1
-                    cbdf = DataFrame(12 * cb[i, :]', :auto)
-                    dbdf = DataFrame(12 * db[i, :]', :auto)
+                    socbdf = DataFrame(12 * socb[i, :]', :auto)
                     CSV.write(
                         joinpath(
                             output_folder * "/Strategic",
-                            "EDESCB" * "$i" * ".csv",
+                            "EDESB" * "$i" * ".csv",
                         ),
-                        cbdf,
-                        append = true,
-                    )
-                    CSV.write(
-                        joinpath(
-                            output_folder * "/Strategic",
-                            "EDESDB" * "$i" * ".csv",
-                        ),
-                        dbdf,
+                        socbdf,
                         append = true,
                     )
                 end
@@ -424,22 +376,19 @@ function setEDConstraints(
         else
             # update bids for all energy storage using historical bids
             for i in axes(RTDBids, 1)
-                db[i, :] .= EDDBidInput[i, tp] / EDSteps
-                cb[i, :] .= -EDCBidInput[i, tp] / EDSteps
+                db[i] = EDDBidInput[i, tp] / EDSteps
+                cb[i] = -EDCBidInput[i, tp] / EDSteps
             end
         end
         # Update new bids in edmodel
         for i in axes(RTDBids, 1)
             for s in 1:ESSeg
+                set_objective_coefficient(edmodel, edmodel[:d][i, tp], db[i])
+                set_objective_coefficient(edmodel, edmodel[:c][i, tp], cb[i])
                 set_objective_coefficient(
                     edmodel,
-                    edmodel[:d][i, s, tp],
-                    db[i, s],
-                )
-                set_objective_coefficient(
-                    edmodel,
-                    edmodel[:c][i, s, tp],
-                    cb[i, s],
+                    edmodel[:eT][i, s],
+                    -socb[i, s],
                 )
             end
         end
@@ -529,8 +478,7 @@ function writeEDtoCSVandUpdateSOC(
     EDU,
     EDV,
     EDW,
-    db,
-    cb,
+    socb,
     all_EDprices_df,
     storagezone,
     PriceCap,
@@ -552,8 +500,8 @@ function writeEDtoCSVandUpdateSOC(
 )
     ts = ((d - 1) * 24 + h - 1) * EDSteps + t # time step
     EDGPIni = value.(edmodel[:guc])[:, 1]
-    EDGdf = DataFrame(EDGPIni', :auto)
-    CSV.write(joinpath(output_folder, "EDGen.csv"), EDGdf, append = true)
+    # EDGdf = DataFrame(EDGPIni', :auto)
+    # CSV.write(joinpath(output_folder, "EDGen.csv"), EDGdf, append = true)
     # EDReGen = value.(edmodel[:gr])[:, 1]
     # EDReGendf = DataFrame(EDReGen', :auto)
     # CSV.write(
@@ -578,71 +526,56 @@ function writeEDtoCSVandUpdateSOC(
     #     DataFrame(EDCBidInput[:, 1]', :auto),
     #     append = true,
     # )
-    EDESD = value.(edmodel[:totald])[:, 1]
-    EDESDdf = DataFrame(EDESD', :auto)
-    CSV.write(joinpath(output_folder, "EDESD.csv"), EDESDdf, append = true)
-    EDESC = value.(edmodel[:totalc])[:, 1]
-    EDESCdf = DataFrame(EDESC', :auto)
-    CSV.write(joinpath(output_folder, "EDESC.csv"), EDESCdf, append = true)
-    EDSegSOCini = value.(edmodel[:e])[:, :, 1]
-    EDSOCini = value.(edmodel[:totale])[:, 1]
-    EDSOCinidf = DataFrame(EDSOCini', :auto)
-    CSV.write(
-        joinpath(output_folder, "EDSOCini.csv"),
-        EDSOCinidf,
-        append = true,
-    )
-    EDGMCcost[ts] = sum(EDGPIni .* params.GMC * FuelAdjustment) / EDSteps
-    EDGSMCcost[ts] =
-        sum(
-            value.(edmodel[:gucs])[:, :, 1] .* EDGSMC[:, :, 1] * FuelAdjustment,
-        ) / EDSteps
-    EDVOLL[ts] =
-        sum(value.(edmodel[:s])[:, :, 1] .* PriceCap[:, :, 1]) / EDSteps
-    EDEScost[ts] = sum(EDESD .* params.EMC) / EDSteps
-    EDcost[ts] =
-        EDGMCcost[ts] +
-        EDGSMCcost[ts] +
-        EDVOLL[ts] +
-        EDEScost[ts] +
-        sum(
-            EDU[:, (h-1)*EDSteps+t] .* params.GNLC / EDSteps +
-            EDV[:, (h-1)*EDSteps+t] .* params.GSUC,
-        )
-    ### TODO: Remove this once confirmed
-    EDEScostold[ts] = sum(
-        value.(edmodel[:d])[:, :, 1] .* db[:, :] +
-        value.(edmodel[:c])[:, :, 1] .* cb[:, :],
-    )
-    EDcostold[ts] =
-        EDGMCcost[ts] +
-        EDGSMCcost[ts] +
-        EDVOLL[ts] +
-        EDEScostold[ts] +
-        sum(
-            EDU[:, (h-1)*EDSteps+t] .* params.GNLC / EDSteps +
-            EDV[:, (h-1)*EDSteps+t] .* params.GSUC,
-        )
-    EDTrans = value.(edmodel[:f])[:, 1]
-    EDTransdf = DataFrame(EDTrans', :auto)
-    CSV.write(joinpath(output_folder, "EDTrans.csv"), EDTransdf, append = true)
-    EDS = value.(edmodel[:totals])[:, 1]
-    EDSdf = DataFrame(EDS', :auto)
-    CSV.write(joinpath(output_folder, "EDSlack.csv"), EDSdf, append = true)
+    # EDESD = value.(edmodel[:d])[:, 1]
+    # EDESDdf = DataFrame(EDESD', :auto)
+    # CSV.write(joinpath(output_folder, "EDESD.csv"), EDESDdf, append = true)
+    # EDESC = value.(edmodel[:c])[:, 1]
+    # EDESCdf = DataFrame(EDESC', :auto)
+    # CSV.write(joinpath(output_folder, "EDESC.csv"), EDESCdf, append = true)
+    EDSOCini = value.(edmodel[:e])[:, 1]
+    # EDSOCinidf = DataFrame(EDSOCini', :auto)
+    # CSV.write(
+    #     joinpath(output_folder, "EDSOCini.csv"),
+    #     EDSOCinidf,
+    #     append = true,
+    # )
+    # EDGMCcost[ts] = sum(EDGPIni .* params.GMC * FuelAdjustment) / EDSteps
+    # EDGSMCcost[ts] =
+    #     sum(
+    #         value.(edmodel[:gucs])[:, :, 1] .* EDGSMC[:, :, 1] * FuelAdjustment,
+    #     ) / EDSteps
+    # EDVOLL[ts] =
+    #     sum(value.(edmodel[:s])[:, :, 1] .* PriceCap[:, :, 1]) / EDSteps
+    # EDEScost[ts] = sum(EDESD .* params.EMC) / EDSteps
+    # EDcost[ts] =
+    #     EDGMCcost[ts] +
+    #     EDGSMCcost[ts] +
+    #     EDVOLL[ts] +
+    #     EDEScost[ts] +
+    #     sum(
+    #         EDU[:, (h-1)*EDSteps+t] .* params.GNLC / EDSteps +
+    #         EDV[:, (h-1)*EDSteps+t] .* params.GSUC,
+    #     )
+    # EDTrans = value.(edmodel[:f])[:, 1]
+    # EDTransdf = DataFrame(EDTrans', :auto)
+    # CSV.write(joinpath(output_folder, "EDTrans.csv"), EDTransdf, append = true)
+    # EDS = value.(edmodel[:totals])[:, 1]
+    # EDSdf = DataFrame(EDS', :auto)
+    # CSV.write(joinpath(output_folder, "EDSlack.csv"), EDSdf, append = true)
     EDprice = dual.(edmodel[:LoadBalance])[:, 1]
     EDpricedf = DataFrame(EDprice', :auto)
     CSV.write(joinpath(output_folder, "EDprice.csv"), EDpricedf, append = true)
     all_EDprices_df = vcat(all_EDprices_df, EDpricedf)
-    EDESRev =
-        EDprice[storagezone] .*
-        (value.(edmodel[:totald])[:, 1] - value.(edmodel[:totalc])[:, 1])
-    CSV.write(
-        joinpath(output_folder, "EDESRev.csv"),
-        DataFrame(EDESRev', :auto),
-        append = true,
-    )
-    EDGZone = DataFrame(value.(edmodel[:guc])[:, 1]' * params.genmap, :auto)
-    CSV.write(joinpath(output_folder, "EDGenZone.csv"), EDGZone, append = true)
+    # EDESRev =
+    #     EDprice[storagezone] .*
+    #     (value.(edmodel[:d])[:, 1] - value.(edmodel[:c])[:, 1])
+    # CSV.write(
+    #     joinpath(output_folder, "EDESRev.csv"),
+    #     DataFrame(EDESRev', :auto),
+    #     append = true,
+    # )
+    # EDGZone = DataFrame(value.(edmodel[:guc])[:, 1]' * params.genmap, :auto)
+    # CSV.write(joinpath(output_folder, "EDGenZone.csv"), EDGZone, append = true)
     # EDHydroZone = DataFrame(
     #     value.(edmodel[:gh])[:, 1]' * params.hydromap,
     #     :auto,
@@ -652,12 +585,12 @@ function writeEDtoCSVandUpdateSOC(
     #     EDHydroZone,
     #     append = true,
     # )
-    EDHydroZone = DataFrame(value.(edmodel[:gh])[:, 1]', :auto)
-    CSV.write(
-        joinpath(output_folder, "EDHydroZone.csv"),
-        EDHydroZone,
-        append = true,
-    )
+    # EDHydroZone = DataFrame(value.(edmodel[:gh])[:, 1]', :auto)
+    # CSV.write(
+    #     joinpath(output_folder, "EDHydroZone.csv"),
+    #     EDHydroZone,
+    #     append = true,
+    # )
     # EDRenewableZone = DataFrame(
     #     value.(edmodel[:gr])[:, 1]' * params.renewablemap,
     #     :auto,
@@ -667,39 +600,38 @@ function writeEDtoCSVandUpdateSOC(
     #     EDRenewableZone,
     #     append = true,
     # )
-    EDSolarZone = DataFrame(value.(edmodel[:gs])[:, 1]', :auto)
-    CSV.write(
-        joinpath(output_folder, "EDSolarZone.csv"),
-        EDSolarZone,
-        append = true,
-    )
-    EDWindZone = DataFrame(value.(edmodel[:gw])[:, 1]', :auto)
-    CSV.write(
-        joinpath(output_folder, "EDWindZone.csv"),
-        EDWindZone,
-        append = true,
-    )
-    EDESDisZone =
-        DataFrame(value.(edmodel[:totald])[:, 1]' * params.storagemap, :auto)
-    CSV.write(
-        joinpath(output_folder, "EDESDisZone.csv"),
-        EDESDisZone,
-        append = true,
-    )
-    EDESChaZone =
-        DataFrame(value.(edmodel[:totalc])[:, 1]' * params.storagemap, :auto)
-    CSV.write(
-        joinpath(output_folder, "EDESChaZone.csv"),
-        EDESChaZone,
-        append = true,
-    )
-    EDSOCZone =
-        DataFrame(value.(edmodel[:totale])[:, 1]' * params.storagemap, :auto)
-    CSV.write(
-        joinpath(output_folder, "EDSoCZone.csv"),
-        EDSOCZone,
-        append = true,
-    )
+    # EDSolarZone = DataFrame(value.(edmodel[:gs])[:, 1]', :auto)
+    # CSV.write(
+    #     joinpath(output_folder, "EDSolarZone.csv"),
+    #     EDSolarZone,
+    #     append = true,
+    # )
+    # EDWindZone = DataFrame(value.(edmodel[:gw])[:, 1]', :auto)
+    # CSV.write(
+    #     joinpath(output_folder, "EDWindZone.csv"),
+    #     EDWindZone,
+    #     append = true,
+    # )
+    # EDESDisZone =
+    #     DataFrame(value.(edmodel[:d])[:, 1]' * params.storagemap, :auto)
+    # CSV.write(
+    #     joinpath(output_folder, "EDESDisZone.csv"),
+    #     EDESDisZone,
+    #     append = true,
+    # )
+    # EDESChaZone =
+    #     DataFrame(value.(edmodel[:c])[:, 1]' * params.storagemap, :auto)
+    # CSV.write(
+    #     joinpath(output_folder, "EDESChaZone.csv"),
+    #     EDESChaZone,
+    #     append = true,
+    # )
+    # EDSOCZone = DataFrame(value.(edmodel[:e])[:, 1]' * params.storagemap, :auto)
+    # CSV.write(
+    #     joinpath(output_folder, "EDSoCZone.csv"),
+    #     EDSOCZone,
+    #     append = true,
+    # )
     # Update initial generation output for next time step
     for i in axes(params.GPIni, 1)
         # if (h - 1) * EDSteps + t != UCHorizon * EDSteps
@@ -729,9 +661,7 @@ function writeEDtoCSVandUpdateSOC(
         # end
     end
     for i in axes(EDSOCini, 1)
-        for s in 1:ESSeg
-            set_normalized_rhs(edmodel[:StorageSOCIni][i, s], EDSegSOCini[i, s])
-        end
+        set_normalized_rhs(edmodel[:StorageSOCIni][i], EDSOCini[i])
     end
     return EDGPIni, EDSOCini, all_EDprices_df
 end
@@ -809,8 +739,9 @@ function solving(
         24 * EDSteps + 1,
     )
 
-    db = Array{Float64}(undef, size(params.storagemap, 1), ESSeg)
-    cb = Array{Float64}(undef, size(params.storagemap, 1), ESSeg)
+    socb = zeros(Float64, size(params.storagemap, 1), ESSeg)
+    db = params.EMC / EDSteps
+    cb = zeros(Float64, size(params.storagemap, 1))
     AdjustedUCL = params.UCL * LoadAdjustment
     UCL_repeated = repeat(params.UCL, inner = (12, 1))
     LoadError = UCL_repeated - params.EDL
@@ -1098,6 +1029,7 @@ function solving(
                         StrategicES,
                         FORB,
                         bidmodels,
+                        socb,
                         db,
                         cb,
                         vrt,
@@ -1141,8 +1073,7 @@ function solving(
                                 EDU,
                                 EDV,
                                 EDW,
-                                db,
-                                cb,
+                                socb,
                                 all_EDprices_df,
                                 storagezone,
                                 PriceCap,
