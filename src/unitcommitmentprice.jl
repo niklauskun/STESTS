@@ -159,6 +159,13 @@ function unitcommitmentprice(
         d[i, h] <= params.EPD[i]
     )
 
+    # Storage Non-Simultaneous Charge and Discharge Constraint
+    @constraint(
+        ucpmodel,
+        StorageNonSimCharge[i = 1:nstorage, h = 1:ntimepoints],
+        c[i, h] + d[i, h] <= params.EPC[i]
+    )
+
     # Storage energy level constraints
     @constraint(
         ucpmodel,

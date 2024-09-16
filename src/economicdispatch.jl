@@ -193,6 +193,13 @@ function economicdispatch(
         totald[i, t] <= params.EPD[i]
     )
 
+    # Storage Non-Simultaneous Charge and Discharge Constraint
+    @constraint(
+        edmodel,
+        StorageNonSimCharge[i = 1:nstorage, t = 1:ntimepoints],
+        totalc[i, t] + totalc[i, t] <= params.EPC[i]
+    )
+
     # Storage energy level constraints
     # @constraint(
     #     edmodel,
